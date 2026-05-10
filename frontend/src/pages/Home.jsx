@@ -471,7 +471,10 @@ const Home = () => {
 
               {/* 14-Day History Chart */}
               <div>
-                <h4 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-indigo-400" /> 14-Day Task Activity</h4>
+                <h4 className="text-sm font-bold mb-4 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-indigo-400" /> 
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-blue-400">14-Day Task Activity</span>
+                </h4>
                 <div className="h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={taskHistoryData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -493,7 +496,10 @@ const Home = () => {
               {/* Priority & Status Pies */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-300 mb-4">Priority Distribution</h4>
+                  <h4 className="text-sm font-bold mb-4 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-rose-400" />
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-orange-400">Priority Distribution</span>
+                  </h4>
                   {priorityData.length > 0 ? (
                     <div className="h-[180px]">
                       <ResponsiveContainer width="100%" height="100%">
@@ -509,7 +515,10 @@ const Home = () => {
                   ) : <p className="text-slate-500 text-sm text-center py-10">No priority data</p>}
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-300 mb-4">Status Distribution</h4>
+                  <h4 className="text-sm font-bold mb-4 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">Status Distribution</span>
+                  </h4>
                   {statusData.length > 0 ? (
                     <div className="h-[180px]">
                       <ResponsiveContainer width="100%" height="100%">

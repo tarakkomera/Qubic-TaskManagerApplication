@@ -38,11 +38,11 @@ const createTransporter = () => {
 const transporter = createTransporter();
 transporter.verify((error, success) => {
   if (error) {
-    console.error('❌ SMTP Connection Error:', error.message);
-    console.log('👉 Current EMAIL_USER:', process.env.EMAIL_USER);
-    console.log('👉 Make sure you use a 16-digit Gmail App Password (no spaces).');
+    console.error(' SMTP Connection Error:', error.message);
+    console.log(' Current EMAIL_USER:', process.env.EMAIL_USER);
+    console.log(' Make sure you use a 16-digit Gmail App Password (no spaces).');
   } else {
-    console.log('🚀 SMTP Server is ready to send "real" emails');
+    console.log(' SMTP Server is ready to send "real" emails');
   }
 });
 
@@ -54,7 +54,7 @@ export const sendVerificationEmail = async (userEmail, code) => {
     const mailOptions = {
       from: `"Qubic App" <${process.env.EMAIL_USER}>`,
       to: userEmail,
-      subject: '🔐 Verify Your Qubic Account',
+      subject: ' Verify Your Qubic Account',
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0f172a; color: #f1f5f9; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
           
@@ -91,11 +91,11 @@ export const sendVerificationEmail = async (userEmail, code) => {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Verification email sent to: ${userEmail}`);
+    console.log(` Verification email sent to: ${userEmail}`);
     logEmailLocally('VERIFICATION OTP', userEmail, `Verification Code: ${code}`);
     return true;
   } catch (error) {
-    console.error('❌ Failed to send verification email:', error.message);
+    console.error(' Failed to send verification email:', error.message);
     // Even if it fails, log it locally so the user can see the code and continue testing
     logEmailLocally('VERIFICATION OTP (REAL SEND FAILED)', userEmail, `Verification Code: ${code} \nError: ${error.message}`);
     return true; // Return true so the frontend doesn't show an error, allowing user to use the code from the log
@@ -110,7 +110,7 @@ export const sendPasswordChangeEmail = async (userEmail, newPassword) => {
     const mailOptions = {
       from: `"Qubic App" <${process.env.EMAIL_USER}>`,
       to: userEmail,
-      subject: '🔑 Your Qubic Password Has Been Reset',
+      subject: ' Your Qubic Password Has Been Reset',
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0f172a; color: #f1f5f9; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
           
@@ -145,11 +145,11 @@ export const sendPasswordChangeEmail = async (userEmail, newPassword) => {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Password reset email sent to: ${userEmail}`);
+    console.log(` Password reset email sent to: ${userEmail}`);
     logEmailLocally('PASSWORD RESET', userEmail, `New Password: ${newPassword}`);
     return true;
   } catch (error) {
-    console.error('❌ Failed to send password reset email:', error.message);
+    console.error(' Failed to send password reset email:', error.message);
     logEmailLocally('PASSWORD RESET (REAL SEND FAILED)', userEmail, `New Password: ${newPassword} \nError: ${error.message}`);
     return true;
   }
