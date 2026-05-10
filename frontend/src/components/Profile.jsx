@@ -8,7 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { useOutletContext } from "react-router-dom";
 import axios from "axios";
 
-const API_URL = "http://localhost:4000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 const InputField = ({ icon: Icon, type, placeholder, value, onChange, required, iconColor = 'text-slate-400' }) => {
   const [show, setShow] = useState(false);

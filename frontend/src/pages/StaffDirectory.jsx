@@ -35,7 +35,7 @@ const StaffDirectory = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const { data } = await axios.get('http://localhost:4000/api/users', {
+      const { data } = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (data.success) {
@@ -56,7 +56,7 @@ const StaffDirectory = () => {
     try {
       const token = localStorage.getItem('token');
       const { data } = await axios.post(
-        'http://localhost:4000/api/users/approve',
+        `${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users/approve`,
         { userId, approve: !currentStatus },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -74,7 +74,7 @@ const StaffDirectory = () => {
     try {
       const token = localStorage.getItem('token');
       const { data } = await axios.put(
-        `http://localhost:4000/api/users/${staffId}/assign-hr`,
+        `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}/users/${staffId}/assign-hr`,
         { userId: staffId, hrId: hrId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -108,7 +108,7 @@ const StaffDirectory = () => {
       const token = localStorage.getItem('token');
 
       const { data } = await axios.put(
-        `http://localhost:4000/api/users/${selectedUser._id}/reset-password`,
+        `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}/users/${selectedUser._id}/reset-password`,
         { newPassword },
         { headers: { Authorization: `Bearer ${token}` } }
       );

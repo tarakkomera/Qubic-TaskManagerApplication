@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Eye, EyeOff, Lock, Mail, LogIn, User, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const API_URL = 'http://localhost:4000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const INITIAL_FORM = { email: '', password: '' };
 
 export const INPUTWRAPPER =

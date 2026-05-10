@@ -2,7 +2,7 @@ import { AlignLeft, Calendar, Flag, PlusCircle, Save, X, PlayCircle, Zap } from 
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-const API_BASE = 'http://localhost:4000/api/tasks'
+const API_BASE = `${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/tasks`
 
 const DEFAULT_TASK = {
   title: '',

@@ -36,7 +36,7 @@ const App = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
-      const { data } = await axios.get('http://localhost:4000/api/users/me', {
+      const { data } = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users/me`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (data.success) {
