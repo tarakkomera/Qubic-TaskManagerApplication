@@ -143,7 +143,11 @@ const Login = ({ onSubmit, onSwitchMode }) => {
                   Remember me
                 </label>
               </div>
-              <button type="button" className="text-xs text-cyan-400 hover:underline">
+              <button 
+                type="button" 
+                onClick={() => navigate('/forgot-password')}
+                className="text-xs text-cyan-400 hover:underline"
+              >
                 Forgot password?
               </button>
             </div>

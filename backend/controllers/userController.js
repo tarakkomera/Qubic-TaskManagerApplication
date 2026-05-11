@@ -2,7 +2,7 @@ import User from "../models/userModel.js";
 import validator from "validator";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { sendPasswordChangeEmail, sendVerificationEmail } from "../services/emailService.js";
+import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail } from "../services/emailService.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_here";
 const TOKEN_EXPIRES = '24h';
@@ -391,3 +391,69 @@ export const assignHRToStaff = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
+
+// Forgot Password - Send OTP
+export async function forgotPassword(req, res) {
+    const { email } = req.body;
+    if (!email || !validator.isEmail(email)) {
+        return res.status(400).json({ success: false, message: "Valid email is required" });
+    }
+
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            // Return 200 even if user not found for security purposes
+            return res.status(200).json({ success: true, message: "If that email exists, a reset code has been sent." });
+        }
+
+        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        user.resetPasswordToken = resetCode;
+        user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        await user.save();
+
+        await sendForgotPasswordEmail(user.email, resetCode);
+
+        res.status(200).json({ success: true, message: "If that email exists, a reset code has been sent." });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+}
+
+// Reset Password - Verify OTP and Change Password
+export async function resetPassword(req, res) {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+        return res.status(400).json({ success: false, message: "Email, code, and new password are required" });
+    }
+
+    const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+        return res.status(400).json({ success: false, message: "Password must be at least 8 characters long and contain at least one uppercase letter and one special character." });
+    }
+
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        if (user.resetPasswordExpires && new Date() > user.resetPasswordExpires) {
+            return res.status(400).json({ success: false, message: "Reset code has expired. Please request a new one." });
+        }
+
+        if (user.resetPasswordToken !== code.trim()) {
+            return res.status(400).json({ success: false, message: "Invalid reset code" });
+        }
+
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedNewPassword;
+        user.resetPasswordToken = null;
+        user.resetPasswordExpires = null;
+        await user.save();
+
+        res.status(200).json({ success: true, message: "Password has been successfully reset. You can now log in." });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+}

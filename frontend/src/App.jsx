@@ -4,6 +4,7 @@ import  Layout  from './components/Layout'
 import Signup from './components/Signup'
 import Login from './components/Login'
 import VerifyEmail from './pages/VerifyEmail'
+import ForgotPassword from './pages/ForgotPassword'
 import Dashboard from './pages/Dashboard'
 import PendingPage from './pages/PendingPage'
 import CompletedPage from './pages/CompletedPage'
@@ -106,6 +107,7 @@ const App = () => {
       />
 
       <Route path='/verify' element={<VerifyEmail />} />
+      <Route path='/forgot-password' element={<ForgotPassword />} />
 
       <Route element={currentUser ? <Layout user={currentUser} onLogout={handleLogout} refreshUser={refreshUser}><Outlet /></Layout> : <Navigate to='/login' replace />}>
         <Route path='/' element={<Home />} />
