@@ -28,7 +28,7 @@ const Performance = () => {
     if (isAdminOrHR) {
       const fetchAll = async () => {
         try {
-          const { data } = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users`, {
+          const { data } = await axios.get(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/users`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
           });
           if (data.success) {

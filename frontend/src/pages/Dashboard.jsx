@@ -5,7 +5,7 @@ import TaskModal from '../components/TaskModal'
 import axios from 'axios'
 import TaskItem from '../components/TaskItem'
 
-const API_BASE = `${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/tasks`
+const API_BASE = `${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/tasks`
 
 const Dashboard = () => {
   const { tasks, refreshTasks, userRole, softDeleteTask } = useOutletContext()

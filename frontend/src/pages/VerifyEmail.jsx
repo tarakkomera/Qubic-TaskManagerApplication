@@ -35,7 +35,7 @@ const VerifyEmail = () => {
 
     setLoading(true);
     try {
-      const { data } = await axios.post(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users/verify`, {
+      const { data } = await axios.post(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/users/verify`, {
         email,
         code
       });
@@ -60,7 +60,7 @@ const VerifyEmail = () => {
 
     setResendLoading(true);
     try {
-      const { data } = await axios.post(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users/resend-otp`, { email });
+      const { data } = await axios.post(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/users/resend-otp`, { email });
       if (data.success) {
         toast.success(data.message);
       }

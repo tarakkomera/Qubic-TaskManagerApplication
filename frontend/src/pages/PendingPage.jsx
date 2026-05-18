@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 
-const API_BASE = `${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/tasks`;
+const API_BASE = `${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/tasks`;
 
 const SORT_OPTIONS = [
   { id: 'newest', label: 'Newest', icon: <SortDesc className="w-3 h-3" /> },

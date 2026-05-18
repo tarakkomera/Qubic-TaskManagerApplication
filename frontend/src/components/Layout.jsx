@@ -43,8 +43,8 @@ const Layout = ({ onLogout, user, refreshUser }) => {
       if (!token) throw new Error('No token found');
 
       const [tasksRes, usersRes] = await Promise.all([
-        axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/tasks/gp`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/users`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] })),
+        axios.get(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/tasks/gp`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/users`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] })),
       ]);
 
       const arr = Array.isArray(tasksRes.data) ? tasksRes.data
@@ -79,7 +79,7 @@ const Layout = ({ onLogout, user, refreshUser }) => {
   const executeDelete = useCallback(async (taskId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}/tasks/${taskId}/gp`, {
+      await axios.delete(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/tasks/${taskId}/gp`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTasks(prev => prev.filter(t => t._id !== taskId && t.id !== taskId));

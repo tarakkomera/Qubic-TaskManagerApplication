@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, Calendar, PlayCircle, CheckCircle2, UserCheck, Inbox, Trash2, Briefcase, Users } from 'lucide-react';
 import TaskModal from '../components/TaskModal';
 
-const API_BASE = `${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}`}/tasks`;
+const API_BASE = `${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/tasks`;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
