@@ -60,8 +60,102 @@ const getTransporter = () => {
   return transporter;
 };
 
+// ─── HTTP API Sender (to bypass Render free-tier SMTP blocks) ────────────────
+const sendViaHTTPAPI = async (mailOptions) => {
+  // 1. Resend API
+  if (process.env.RESEND_API_KEY) {
+    console.log('📬 Sending email via Resend HTTP API...');
+    const fromAddress = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        html: mailOptions.html
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`Resend API Error: ${data.message || response.statusText}`);
+    }
+    return true;
+  }
+
+  // 2. Brevo (Sendinblue) API
+  if (process.env.BREVO_API_KEY) {
+    console.log('📬 Sending email via Brevo HTTP API...');
+    const senderEmail = process.env.EMAIL_USER || 'qubicapplication@gmail.com';
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': process.env.BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: 'Qubic App', email: senderEmail },
+        to: [{ email: mailOptions.to }],
+        subject: mailOptions.subject,
+        htmlContent: mailOptions.html
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`Brevo API Error: ${data.message || response.statusText}`);
+    }
+    return true;
+  }
+
+  // 3. SendGrid API
+  if (process.env.SENDGRID_API_KEY) {
+    console.log('📬 Sending email via SendGrid HTTP API...');
+    const senderEmail = process.env.EMAIL_USER || 'qubicapplication@gmail.com';
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: mailOptions.to }] }],
+        from: { email: senderEmail, name: 'Qubic App' },
+        subject: mailOptions.subject,
+        content: [{ type: 'text/html', value: mailOptions.html }]
+      })
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(`SendGrid API Error: ${data.errors?.[0]?.message || response.statusText}`);
+    }
+    return true;
+  }
+
+  return false;
+};
+
 // ─── Retry helper with exponential backoff ──────────────────────────────────
 const sendWithRetry = async (mailOptions, maxRetries = 3) => {
+  // Check if any HTTP API key is configured to bypass SMTP port blocking
+  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await sendViaHTTPAPI(mailOptions);
+        return true;
+      } catch (error) {
+        console.error(`📧 HTTP API attempt ${attempt}/${maxRetries} failed:`, error.message);
+        if (attempt === maxRetries) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+      }
+    }
+    return;
+  }
+
+  // Fallback to SMTP
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const t = getTransporter();
@@ -69,7 +163,7 @@ const sendWithRetry = async (mailOptions, maxRetries = 3) => {
       await t.sendMail(mailOptions);
       return true;
     } catch (error) {
-      console.error(`📧 Send attempt ${attempt}/${maxRetries} failed:`, error.message);
+      console.error(`📧 SMTP Send attempt ${attempt}/${maxRetries} failed:`, error.message);
       if (attempt === maxRetries) {
         // Reset transporter on final failure so next email gets a fresh connection
         transporter = null;
