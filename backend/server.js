@@ -26,6 +26,13 @@ app.get('/', (req, res) => {
     res.send('Welcome to the Qubic API');
 })
 
+// Health check endpoint — use this with an external cron/uptime service
+// (e.g., UptimeRobot, cron-job.org) to ping every 5 minutes
+// and prevent Render free-tier from sleeping the server
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: Date.now() });
+});
+
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);

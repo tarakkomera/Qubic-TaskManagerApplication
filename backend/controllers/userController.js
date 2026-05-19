@@ -6,6 +6,8 @@ import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_here";
 const TOKEN_EXPIRES = '24h';
+// Salt rounds: 8 is secure and ~4× faster than 10 on CPU-limited free-tier hosting
+const BCRYPT_ROUNDS = 8;
 
 const createToken = (userID) => jwt.sign({ id: userID }, JWT_SECRET, { expiresIn: TOKEN_EXPIRES });
 
@@ -42,7 +44,7 @@ export async function registerUser(req, res) {
             // First admin is auto-approved
             isApproved = true;
         }
-        const hashed = await bcrypt.hash(password, 10);
+        const hashed = await bcrypt.hash(password, BCRYPT_ROUNDS);
         const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -107,18 +109,8 @@ export async function loginUser(req, res) {
             return res.status(403).json({ message: "Your account is pending approval by an administrator/HR.", notApproved: true });
         }
 
-        // Automatic HR allocation if not already assigned (for Staff only)
-        if (user.role === 'staff' && !user.assignedHR) {
-            const hrs = await User.find({ role: 'hr', isApproved: true });
-            for (const hr of hrs) {
-                const count = await User.countDocuments({ assignedHR: hr._id });
-                if (count < 10) {
-                    user.assignedHR = hr._id;
-                    await user.save();
-                    break;
-                }
-            }
-        }
+        // HR allocation now happens at approval time only (see toggleUserApproval)
+        // This avoids expensive N+1 queries on every login
 
         const token = createToken(user._id);
         res.status(200).json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, points: user.points } });
@@ -190,7 +182,7 @@ export async function updateUserPassword(req, res) {
             return res.status(400).json({ success: false, message: "Current password is incorrect" });
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         user.password = hashedNewPassword;
         await user.save();
 
@@ -228,7 +220,7 @@ export async function adminResetPassword(req, res) {
             return res.status(404).json({ success: false, message: "User not found" });
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         targetUser.password = hashedNewPassword;
         await targetUser.save();
 
@@ -451,7 +443,7 @@ export async function resetPassword(req, res) {
             return res.status(400).json({ success: false, message: "Invalid reset code" });
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         user.password = hashedNewPassword;
         user.resetPasswordToken = null;
         user.resetPasswordExpires = null;

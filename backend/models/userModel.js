@@ -62,5 +62,10 @@ const userSchema = new mongoose.Schema({
     },
 });
 
+// Indexes for production query performance
+// Note: email index is already created by unique:true in the schema
+userSchema.index({ role: 1, isApproved: 1 });         // Fast HR/staff queries
+userSchema.index({ assignedHR: 1 });                  // Fast team count queries
+
 const userModel = mongoose.models.user || mongoose.model('User', userSchema);
 export default userModel;
