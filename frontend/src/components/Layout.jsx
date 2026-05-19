@@ -40,7 +40,12 @@ const Layout = ({ onLogout, user, refreshUser }) => {
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
+      if (!token) {
+        setTasks([]);
+        setUsers([]);
+        if (!silent) setLoading(false);
+        return;
+      }
 
       const [tasksRes, usersRes] = await Promise.all([
         axios.get(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/tasks/gp`, { headers: { Authorization: `Bearer ${token}` } }),
@@ -60,7 +65,7 @@ const Layout = ({ onLogout, user, refreshUser }) => {
     } catch (err) {
       console.error(err);
       if (!silent) setError(err.message || 'Something went wrong');
-      if (err.response?.status === 401) onLogout();
+      if (err.response?.status === 401 && onLogout) onLogout();
     } finally {
       if (!silent) setLoading(false);
     }

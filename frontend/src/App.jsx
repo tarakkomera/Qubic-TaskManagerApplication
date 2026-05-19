@@ -109,15 +109,15 @@ const App = () => {
       <Route path='/verify' element={<VerifyEmail />} />
       <Route path='/forgot-password' element={<ForgotPassword />} />
 
-      <Route element={currentUser ? <Layout user={currentUser} onLogout={handleLogout} refreshUser={refreshUser}><Outlet /></Layout> : <Navigate to='/login' replace />}>
+      <Route element={<Layout user={currentUser} onLogout={handleLogout} refreshUser={refreshUser}><Outlet /></Layout>}>
         <Route path='/' element={<Home />} />
-        <Route path='/tasks' element={<Dashboard />} />
-        <Route path='/kanban' element={<KanbanBoard />} />
-        <Route path='/performance' element={<Performance />} />
-        <Route path='/pending' element={<PendingPage />} />
-        <Route path='/complete' element={<CompletedPage />} />
-        <Route path='/staff' element={<StaffDirectory />} />
-        <Route path='/profile' element={<Profile user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} />} />
+        <Route path='/tasks' element={currentUser ? <Dashboard /> : <Navigate to='/login' replace />} />
+        <Route path='/kanban' element={currentUser ? <KanbanBoard /> : <Navigate to='/login' replace />} />
+        <Route path='/performance' element={currentUser ? <Performance /> : <Navigate to='/login' replace />} />
+        <Route path='/pending' element={currentUser ? <PendingPage /> : <Navigate to='/login' replace />} />
+        <Route path='/complete' element={currentUser ? <CompletedPage /> : <Navigate to='/login' replace />} />
+        <Route path='/staff' element={currentUser ? <StaffDirectory /> : <Navigate to='/login' replace />} />
+        <Route path='/profile' element={currentUser ? <Profile user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} /> : <Navigate to='/login' replace />} />
       </Route>
 
         <Route path='*' element={<Navigate to={currentUser ? '/' : '/login'} replace />} />

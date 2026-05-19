@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
@@ -79,10 +79,22 @@ const StatModal = ({ stat, onClose }) => {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 const Home = () => {
-  const { tasks, users = [], userRole } = useOutletContext();
+  const { tasks = [], users = [], userRole, currentUser } = useOutletContext();
   const navigate = useNavigate();
   const [selectedStat, setSelectedStat] = useState(null);
   const [showTaskStats, setShowTaskStats] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setShowLoginPrompt(false);
+      return;
+    }
+    const timer = setInterval(() => {
+      setShowLoginPrompt(true);
+    }, 60000); // 1 minute
+    return () => clearInterval(timer);
+  }, [currentUser]);
 
   // ─── Stats ─────────────────────────────────────────────────────────────────
   const globalStats = useMemo(() => {
@@ -263,13 +275,13 @@ const Home = () => {
           </p>
           <div className="flex flex-wrap gap-4">
             <button
-              onClick={() => navigate('/kanban')}
+              onClick={() => navigate(currentUser ? '/kanban' : '/login')}
               className="px-8 py-3 bg-gradient-to-r from-teal-400 via-cyan-500 to-blue-500 bg-[length:200%_auto] text-white rounded-xl font-bold hover:shadow-lg hover:shadow-cyan-500/40 hover:-translate-y-1 transition-all animate-text-shimmer"
             >
               Get Started
             </button>
             <button
-              onClick={() => navigate('/performance')}
+              onClick={() => navigate(currentUser ? '/performance' : '/login')}
               className="px-8 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all flex items-center gap-2 group"
             >
               View Analytics <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
@@ -285,7 +297,7 @@ const Home = () => {
           return (
             <div
               key={idx}
-              onClick={() => setSelectedStat(stat)}
+              onClick={() => currentUser ? setSelectedStat(stat) : navigate('/login')}
               className={`bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10 shadow-xl group hover:-translate-y-2 hover:border-cyan-500/30 hover:shadow-cyan-500/10 transition-all duration-500 animate-slide-up cursor-pointer ${stat.delay}`}
             >
               <div className={`w-10 h-10 rounded-xl bg-${stat.color}-500/10 flex items-center justify-center mb-3 border border-${stat.color}-500/20 group-hover:scale-110 transition-transform`}>
@@ -392,7 +404,7 @@ const Home = () => {
 
       {/* ── Task Statistics Banner ────────────────────────────────────── */}
       <div
-        onClick={() => setShowTaskStats(true)}
+        onClick={() => currentUser ? setShowTaskStats(true) : navigate('/login')}
         className="group cursor-pointer relative overflow-hidden bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-indigo-500/10 border border-cyan-500/20 rounded-3xl p-6 flex items-center justify-between hover:border-cyan-500/40 hover:shadow-[0_0_40px_rgba(34,211,238,0.1)] transition-all duration-500 animate-scale-in delay-4"
       >
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -539,6 +551,33 @@ const Home = () => {
 
             <div className="p-4 border-t border-white/5 shrink-0">
               <button onClick={() => setShowTaskStats(false)} className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-sm font-bold text-slate-300 transition-all">Close Dashboard</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Login Prompt Modal (Every 1 minute for unauthenticated) ──────── */}
+      {showLoginPrompt && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in" onClick={() => setShowLoginPrompt(false)}>
+          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-scale-in flex flex-col p-8 text-center" onClick={e => e.stopPropagation()}>
+            <div className="mx-auto w-16 h-16 bg-gradient-to-br from-teal-400 to-cyan-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-cyan-500/20">
+              <Zap className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-black text-white mb-3">Join Qubic Today</h2>
+            <p className="text-slate-400 text-sm mb-8">
+              You are viewing as a guest. Log in or sign up to unlock full features, perform tasks, and manage your workflow.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button onClick={() => navigate('/login')} className="w-full py-3 bg-gradient-to-r from-teal-400 via-cyan-500 to-blue-500 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-cyan-500/40 transition-all">
+                Log In
+              </button>
+              <button onClick={() => navigate('/signup')} className="w-full py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all">
+                Sign Up
+              </button>
+              <button onClick={() => setShowLoginPrompt(false)} className="w-full py-2 mt-2 text-slate-500 text-sm font-semibold hover:text-slate-300 transition-colors">
+                Maybe Later
+              </button>
             </div>
           </div>
         </div>,

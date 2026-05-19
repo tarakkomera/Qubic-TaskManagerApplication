@@ -31,9 +31,9 @@ const STAGGER = ['stagger-1', 'stagger-2', 'stagger-3', 'stagger-4', 'stagger-5'
 const Sidebar = ({ user, tasks = [], isOpen = true, closeSidebar, toggleSidebar }) => {
   const isAdmin = user?.role === 'admin'
   const isHR = user?.role === 'hr'
-  const username = user?.name || 'User'
+  const username = user?.name || 'Guest'
   const initial = username.charAt(0).toUpperCase()
-  const roleLabel = isAdmin ? 'Admin' : isHR ? 'HR Manager' : 'Associate'
+  const roleLabel = user ? (isAdmin ? 'Admin' : isHR ? 'HR Manager' : 'Associate') : 'Unauthenticated'
 
   const avatarGradient = isAdmin
     ? 'from-indigo-500 to-purple-600'
@@ -82,7 +82,7 @@ const Sidebar = ({ user, tasks = [], isOpen = true, closeSidebar, toggleSidebar 
       {/* ── Profile card ─────────────────────────────────────────────────────── */}
       <div className="px-3 mb-3 shrink-0">
         <NavLink
-          to="/profile"
+          to={user ? "/profile" : "/login"}
           onClick={() => closeSidebar?.()}
           className={({ isActive }) =>
             `relative flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all duration-300 group !no-underline overflow-hidden ${isActive ? 'bg-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)]' : 'hover:bg-white/5'
@@ -101,7 +101,7 @@ const Sidebar = ({ user, tasks = [], isOpen = true, closeSidebar, toggleSidebar 
               <span className="text-sm font-bold text-white truncate group-hover:text-cyan-400 transition-colors">
                 {username}
               </span>
-              <Settings className="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400 group-hover:rotate-90 transition-all duration-500 shrink-0" />
+              {user && <Settings className="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400 group-hover:rotate-90 transition-all duration-500 shrink-0" />}
             </div>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
               {roleLabel}

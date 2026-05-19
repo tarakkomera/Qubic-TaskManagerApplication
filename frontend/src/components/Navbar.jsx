@@ -83,7 +83,7 @@ function Navbar({ user, onLogout, toggleSidebar }) {
 
 
           {/* Reward Points Badge - Staff only */}
-          {!isHR && !isAdmin && (
+          {user && !isHR && !isAdmin && (
             <div className='flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-full text-yellow-500 shadow-sm hover:scale-105 transition-all cursor-default'>
               <Zap className='w-4 h-4 fill-yellow-500 text-yellow-500' />
               <span className='text-sm font-bold'>{user?.points || 0}</span>
@@ -91,6 +91,7 @@ function Navbar({ user, onLogout, toggleSidebar }) {
             </div>
           )}
 
+          {user ? (
           <div ref={menuref} className='relative'>
             <button
               onClick={handleMenuToggle}
@@ -154,6 +155,12 @@ function Navbar({ user, onLogout, toggleSidebar }) {
               </ul>
             )}
           </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button onClick={() => navigate('/login')} className="px-4 py-1.5 text-sm font-bold text-white bg-white/10 hover:bg-white/20 rounded-xl transition-colors border border-white/10">Login</button>
+              <button onClick={() => navigate('/signup')} className="px-4 py-1.5 text-sm font-bold text-white bg-gradient-to-r from-teal-400 to-cyan-500 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] rounded-xl transition-all">Sign Up</button>
+            </div>
+          )}
         </div>
       </div>
     </header>
