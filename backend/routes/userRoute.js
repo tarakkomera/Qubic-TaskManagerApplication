@@ -1,5 +1,5 @@
 import express from 'express';
-import { getCurrentUser, loginUser, registerUser, updateUserPassword, updateUserProfile, getAllUsers, adminResetPassword, verifyEmail, toggleUserApproval, resendVerificationEmail, assignHRToStaff, forgotPassword, resetPassword } from '../controllers/userController.js';
+import { getCurrentUser, loginUser, registerUser, updateUserPassword, updateUserProfile, getAllUsers, adminResetPassword, verifyEmail, toggleUserApproval, resendVerificationEmail, assignHRToStaff, forgotPassword, resetPassword, testSMTPConnection } from '../controllers/userController.js';
 
 import authMiddleware from '../middleware/auth.js';
 import hrMiddleware from '../middleware/hrMiddleware.js';
@@ -12,6 +12,7 @@ userRouter.post('/verify', verifyEmail);
 userRouter.post('/resend-otp', resendVerificationEmail);
 userRouter.post('/forgot-password', forgotPassword);
 userRouter.post('/reset-password', resetPassword);
+userRouter.get('/test-email', testSMTPConnection);
 
 
 userRouter.get('/me', authMiddleware, getCurrentUser);

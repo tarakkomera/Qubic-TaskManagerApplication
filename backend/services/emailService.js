@@ -235,3 +235,33 @@ export const sendForgotPasswordEmail = (userEmail, code) => {
       logEmailLocally('FORGOT PASSWORD OTP (REAL SEND FAILED)', userEmail, `Reset Code: ${code} \nError: ${error.message}`);
     });
 };
+
+// ─── SMTP Diagnostics for Production ─────────────────────────────────────────
+export const verifySMTP = async () => {
+  const t = getTransporter();
+  if (!t) throw new Error('Transporter not configured or credentials missing');
+  await t.verify();
+  return true;
+};
+
+export const sendTestEmail = async (toEmail) => {
+  const t = getTransporter();
+  if (!t) throw new Error('Transporter not configured or credentials missing');
+
+  const mailOptions = {
+    from: `"Qubic Diagnostics" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: '🧪 Qubic Live SMTP Test Email',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background: #0f172a; color: #f1f5f9; border-radius: 8px;">
+        <h2 style="color: #22d3ee;">🧪 Live SMTP Test Succeeded!</h2>
+        <p>If you are reading this email, your Qubic production SMTP settings are working perfectly in real-time.</p>
+        <hr style="border-color: #1e293b;" />
+        <p style="font-size: 12px; color: #64748b;">Sent at: ${new Date().toLocaleString()}</p>
+      </div>
+    `
+  };
+
+  await t.sendMail(mailOptions);
+  return true;
+};

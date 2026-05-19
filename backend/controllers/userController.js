@@ -2,7 +2,7 @@ import User from "../models/userModel.js";
 import validator from "validator";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail } from "../services/emailService.js";
+import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail, verifySMTP, sendTestEmail } from "../services/emailService.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_here";
 const TOKEN_EXPIRES = '24h';
@@ -452,5 +452,50 @@ export async function resetPassword(req, res) {
         res.status(200).json({ success: true, message: "Password has been successfully reset. You can now log in." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+}
+
+// SMTP Diagnostics Endpoint
+export async function testSMTPConnection(req, res) {
+    const toEmail = req.query.email || process.env.EMAIL_USER;
+
+    try {
+        console.log(`🧪 Running live SMTP test to: ${toEmail}...`);
+        
+        // 1. Verify SMTP connection settings
+        await verifySMTP();
+        
+        // 2. Try sending test email
+        if (toEmail) {
+            await sendTestEmail(toEmail);
+            return res.status(200).json({
+                success: true,
+                message: `SMTP test passed! Test email sent successfully to ${toEmail}.`,
+                config: {
+                    EMAIL_USER: process.env.EMAIL_USER,
+                    EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS
+                }
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "SMTP settings are valid! (No test email sent because target email is empty).",
+            config: {
+                EMAIL_USER: process.env.EMAIL_USER,
+                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS
+            }
+        });
+    } catch (error) {
+        console.error("❌ SMTP Diagnostics Failed:", error.message);
+        res.status(500).json({
+            success: false,
+            message: "SMTP Diagnostics Failed. Please verify your environment variables.",
+            error: error.message,
+            config: {
+                EMAIL_USER: process.env.EMAIL_USER || "NOT FOUND",
+                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS
+            }
+        });
     }
 }
