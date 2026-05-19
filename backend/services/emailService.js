@@ -86,7 +86,7 @@ const sendWithRetry = async (mailOptions, maxRetries = 3) => {
 // This prevents email delivery from blocking the HTTP response.
 
 // ─── Send Email Verification OTP ─────────────────────────────────────────────
-export const sendVerificationEmail = (userEmail, code) => {
+export const sendVerificationEmail = async (userEmail, code) => {
   const mailOptions = {
     from: `"Qubic App" <${process.env.EMAIL_USER}>`,
     to: userEmail,
@@ -126,20 +126,20 @@ export const sendVerificationEmail = (userEmail, code) => {
     `,
   };
 
-  // Fire-and-forget: don't await, just log results
-  sendWithRetry(mailOptions)
-    .then(() => {
-      console.log(`✅ Verification email sent to: ${userEmail}`);
-      logEmailLocally('VERIFICATION OTP', userEmail, `Verification Code: ${code}`);
-    })
-    .catch((error) => {
-      console.error('❌ Failed to send verification email:', error.message);
-      logEmailLocally('VERIFICATION OTP (REAL SEND FAILED)', userEmail, `Verification Code: ${code} \nError: ${error.message}`);
-    });
+  try {
+    await sendWithRetry(mailOptions);
+    console.log(`✅ Verification email sent to: ${userEmail}`);
+    logEmailLocally('VERIFICATION OTP', userEmail, `Verification Code: ${code}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send verification email:', error.message);
+    logEmailLocally('VERIFICATION OTP (REAL SEND FAILED)', userEmail, `Verification Code: ${code} \nError: ${error.message}`);
+    return false;
+  }
 };
 
 // ─── Send Password Reset Notification ────────────────────────────────────────
-export const sendPasswordChangeEmail = (userEmail, newPassword) => {
+export const sendPasswordChangeEmail = async (userEmail, newPassword) => {
   const mailOptions = {
     from: `"Qubic App" <${process.env.EMAIL_USER}>`,
     to: userEmail,
@@ -177,19 +177,20 @@ export const sendPasswordChangeEmail = (userEmail, newPassword) => {
     `,
   };
 
-  sendWithRetry(mailOptions)
-    .then(() => {
-      console.log(`✅ Password reset email sent to: ${userEmail}`);
-      logEmailLocally('PASSWORD RESET', userEmail, `New Password: ${newPassword}`);
-    })
-    .catch((error) => {
-      console.error('❌ Failed to send password reset email:', error.message);
-      logEmailLocally('PASSWORD RESET (REAL SEND FAILED)', userEmail, `New Password: ${newPassword} \nError: ${error.message}`);
-    });
+  try {
+    await sendWithRetry(mailOptions);
+    console.log(`✅ Password reset email sent to: ${userEmail}`);
+    logEmailLocally('PASSWORD RESET', userEmail, `New Password: ${newPassword}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send password reset email:', error.message);
+    logEmailLocally('PASSWORD RESET (REAL SEND FAILED)', userEmail, `New Password: ${newPassword} \nError: ${error.message}`);
+    return false;
+  }
 };
 
 // ─── Send Forgot Password Code ───────────────────────────────────────────────
-export const sendForgotPasswordEmail = (userEmail, code) => {
+export const sendForgotPasswordEmail = async (userEmail, code) => {
   const mailOptions = {
     from: `"Qubic App" <${process.env.EMAIL_USER}>`,
     to: userEmail,
@@ -225,15 +226,16 @@ export const sendForgotPasswordEmail = (userEmail, code) => {
     `,
   };
 
-  sendWithRetry(mailOptions)
-    .then(() => {
-      console.log(`✅ Forgot Password email sent to: ${userEmail}`);
-      logEmailLocally('FORGOT PASSWORD OTP', userEmail, `Reset Code: ${code}`);
-    })
-    .catch((error) => {
-      console.error('❌ Failed to send forgot password email:', error.message);
-      logEmailLocally('FORGOT PASSWORD OTP (REAL SEND FAILED)', userEmail, `Reset Code: ${code} \nError: ${error.message}`);
-    });
+  try {
+    await sendWithRetry(mailOptions);
+    console.log(`✅ Forgot Password email sent to: ${userEmail}`);
+    logEmailLocally('FORGOT PASSWORD OTP', userEmail, `Reset Code: ${code}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send forgot password email:', error.message);
+    logEmailLocally('FORGOT PASSWORD OTP (REAL SEND FAILED)', userEmail, `Reset Code: ${code} \nError: ${error.message}`);
+    return false;
+  }
 };
 
 // ─── SMTP Diagnostics for Production ─────────────────────────────────────────

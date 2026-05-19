@@ -58,7 +58,7 @@ export async function registerUser(req, res) {
             isApproved
         });
 
-        sendVerificationEmail(user.email, verificationCode);
+        await sendVerificationEmail(user.email, verificationCode);
         console.log(`🔑 DEBUG: User created with email ${user.email} and code ${verificationCode}`);
 
         res.status(201).json({ success: true, message: "Registration successful. Please verify your email.", email: user.email });
@@ -100,7 +100,7 @@ export async function loginUser(req, res) {
             user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
             await user.save();
 
-            sendVerificationEmail(user.email, verificationCode);
+            await sendVerificationEmail(user.email, verificationCode);
             
             return res.status(403).json({ message: "Please verify your email to login. A new verification code has been sent.", unverified: true, email: user.email });
         }
@@ -225,7 +225,7 @@ export async function adminResetPassword(req, res) {
         await targetUser.save();
 
         // Send email notification to the user
-        sendPasswordChangeEmail(targetUser.email, newPassword);
+        await sendPasswordChangeEmail(targetUser.email, newPassword);
 
         res.json({ success: true, message: "Password reset successfully. User has been notified via email." });
     } catch (error) {
@@ -285,7 +285,7 @@ export async function resendVerificationEmail(req, res) {
         user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // Reset expiry to 10 mins
         await user.save();
 
-        sendVerificationEmail(user.email, verificationCode);
+        await sendVerificationEmail(user.email, verificationCode);
         res.status(200).json({ success: true, message: "Verification code resent successfully" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
@@ -408,7 +408,7 @@ export async function forgotPassword(req, res) {
         user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         await user.save();
 
-        sendForgotPasswordEmail(user.email, resetCode);
+        await sendForgotPasswordEmail(user.email, resetCode);
 
         res.status(200).json({ success: true, message: "If that email exists, a reset code has been sent." });
     } catch (error) {
