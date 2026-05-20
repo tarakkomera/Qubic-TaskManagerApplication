@@ -2,19 +2,26 @@ import User from "../models/userModel.js";
 import validator from "validator";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail, verifySMTP, sendTestEmail, getTransportMethod } from "../services/emailService.js";
+import {
+    sendPasswordChangeEmail,
+    sendVerificationEmail,
+    sendForgotPasswordEmail,
+    verifySMTP,
+    sendTestEmail,
+} from "../services/emailService.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_here";
-const TOKEN_EXPIRES = '24h';
-// Salt rounds: 8 is secure and ~4× faster than 10 on CPU-limited free-tier hosting
+const TOKEN_EXPIRES = "24h";
+// 8 rounds is secure and ~4× faster than 10 on free-tier CPU
 const BCRYPT_ROUNDS = 8;
 
-const createToken = (userID) => jwt.sign({ id: userID }, JWT_SECRET, { expiresIn: TOKEN_EXPIRES });
+const createToken = (userID) =>
+    jwt.sign({ id: userID }, JWT_SECRET, { expiresIn: TOKEN_EXPIRES });
 
+// ─── Register ──────────────────────────────────────────────────────────────────
 export async function registerUser(req, res) {
     const { name, email, password, role } = req.body;
 
-    // Validate input
     if (!name || !email || !password) {
         return res.status(400).json({ message: "All fields are required" });
     }
@@ -23,11 +30,13 @@ export async function registerUser(req, res) {
     }
     const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
     if (!passwordRegex.test(password)) {
-        return res.status(400).json({ message: "Password must be at least 8 characters long and contain at least one uppercase letter and one special character" });
+        return res.status(400).json({
+            message:
+                "Password must be at least 8 characters long and contain at least one uppercase letter and one special character",
+        });
     }
 
-    // Only allow valid roles; default to 'staff'
-    let assignedRole = ['admin', 'hr', 'staff'].includes(role) ? role : 'staff';
+    let assignedRole = ["admin", "hr", "staff"].includes(role) ? role : "staff";
     let isApproved = false;
 
     try {
@@ -35,17 +44,22 @@ export async function registerUser(req, res) {
             return res.status(400).json({ message: "Email already exists" });
         }
 
-        // Admin one-time signup logic
-        if (assignedRole === 'admin') {
-            const adminExists = await User.findOne({ role: 'admin' });
+        if (assignedRole === "admin") {
+            const adminExists = await User.findOne({ role: "admin" });
             if (adminExists) {
-                return res.status(400).json({ message: "Admin already exists. Only one admin is allowed." });
+                return res
+                    .status(400)
+                    .json({
+                        message: "Admin already exists. Only one admin is allowed.",
+                    });
             }
-            // First admin is auto-approved
             isApproved = true;
         }
+
         const hashed = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const verificationCode = Math.floor(
+            100000 + Math.random() * 900000
+        ).toString();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         const user = await User.create({
@@ -55,38 +69,43 @@ export async function registerUser(req, res) {
             role: assignedRole,
             verificationCode,
             otpExpires,
-            isApproved
+            isApproved,
         });
 
-        // Send verification email — never let email failure block registration
-        const emailSent = await sendVerificationEmail(user.email, verificationCode);
+        // Attempt to send verification email — non-blocking, failure won't break registration
+        const emailResult = await sendVerificationEmail(user.email, verificationCode);
 
-        if (!emailSent) {
-            // Registration succeeded but email failed — user can still verify via resend
-            return res.status(201).json({
-                success: true,
-                message: "Registration successful! Verification email may be delayed. Please check your email or use 'Resend Code' on the login page.",
-                email: user.email,
-                warning: "Email delivery may be delayed"
-            });
-        }
+        const emailWarning =
+            !emailResult.success
+                ? " (Note: Email delivery failed — check server logs for your verification code, or use 'Resend Code')"
+                : "";
 
-        res.status(201).json({ success: true, message: "Registration successful. Please verify your email.", email: user.email });
+        console.log(
+            `🔑 User created: ${user.email} | OTP: ${verificationCode} | Email sent: ${emailResult.success}`
+        );
 
+        return res.status(201).json({
+            success: true,
+            message: `Registration successful. Please verify your email.${emailWarning}`,
+            email: user.email,
+            // In development, include the code so the UI can display it if email fails
+            ...(process.env.NODE_ENV !== "production" && { devCode: verificationCode }),
+        });
     } catch (err) {
-        res.status(500).json({ success: false, message: "Server error", error: err.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: err.message });
     }
-
 }
 
-
-//LOGIN FUNCTION
+// ─── Login ────────────────────────────────────────────────────────────────────
 export async function loginUser(req, res) {
     const { email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
-        return res.status(400).json({ message: "Email and Password required" });
+        return res
+            .status(400)
+            .json({ message: "Email and Password required" });
     }
     if (!validator.isEmail(email)) {
         return res.status(400).json({ message: "Invalid email format" });
@@ -95,73 +114,102 @@ export async function loginUser(req, res) {
     try {
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(400).json({ message: "Invalid email or password" });
+            return res
+                .status(400)
+                .json({ message: "Invalid email or password" });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(400).json({ message: "Invalid email or password" });
+            return res
+                .status(400)
+                .json({ message: "Invalid email or password" });
         }
 
         if (!user.isVerified) {
-            // Generate a new code since they are trying to log in but are unverified
-            const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+            // Re-generate a fresh OTP and send it
+            const verificationCode = Math.floor(
+                100000 + Math.random() * 900000
+            ).toString();
             user.verificationCode = verificationCode;
-            user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+            user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
             await user.save();
 
-            // Fire-and-forget: don't let email failure block the login response
-            const emailSent = await sendVerificationEmail(user.email, verificationCode);
+            const emailResult = await sendVerificationEmail(user.email, verificationCode);
+            console.log(
+                ` Resent OTP for ${user.email}: ${verificationCode} | Email sent: ${emailResult.success}`
+            );
 
             return res.status(403).json({
-                message: emailSent
-                    ? "Please verify your email to login. A new verification code has been sent."
-                    : "Your account is unverified. A verification code was generated — check Render logs or try 'Resend Code'.",
+                message:
+                    "Please verify your email to login. A new verification code has been sent." +
+                    (!emailResult.success
+                        ? " (Email delivery may be delayed — check server logs)"
+                        : ""),
                 unverified: true,
-                email: user.email
+                email: user.email,
             });
         }
 
         if (!user.isApproved) {
-            return res.status(403).json({ message: "Your account is pending approval by an administrator/HR.", notApproved: true });
+            return res.status(403).json({
+                message: "Your account is pending approval by an administrator/HR.",
+                notApproved: true,
+            });
         }
 
         const token = createToken(user._id);
-        res.status(200).json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, points: user.points } });
-
+        return res.status(200).json({
+            success: true,
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                points: user.points,
+            },
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-//Get current user
+// ─── Get Current User ─────────────────────────────────────────────────────────
 export async function getCurrentUser(req, res) {
     try {
-        const user = await User.findById(req.user.id).select("-password").populate('assignedHR', 'name email');
+        const user = await User.findById(req.user.id)
+            .select("-password")
+            .populate("assignedHR", "name email");
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
         res.status(200).json({ success: true, user });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-
-
-//Update user profile
+// ─── Update Profile ───────────────────────────────────────────────────────────
 export async function updateUserProfile(req, res) {
     const { name, email } = req.body;
 
-    // Validate input
     if (!name || !email || !validator.isEmail(email)) {
-        return res.status(400).json({ success: false, message: " Valid Name and Email are required" });
+        return res
+            .status(400)
+            .json({ success: false, message: "Valid Name and Email are required" });
     }
 
     try {
         const exists = await User.findOne({ email, _id: { $ne: req.user.id } });
         if (exists) {
-            return res.status(404).json({ success: false, message: "Email already exist" });
+            return res
+                .status(404)
+                .json({ success: false, message: "Email already exists" });
         }
         const user = await User.findByIdAndUpdate(
             req.user.id,
@@ -169,107 +217,143 @@ export async function updateUserProfile(req, res) {
             { new: true, runValidators: true, select: "name email" }
         );
         res.json({ success: true, user });
-    }
-    catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    } catch (error) {
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-//change user password
-
+// ─── Change Password ──────────────────────────────────────────────────────────
 export async function updateUserPassword(req, res) {
     const { currentPassword, newPassword } = req.body;
-
     const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+
     if (!currentPassword || !newPassword || !passwordRegex.test(newPassword)) {
-        return res.status(400).json({ success: false, message: "New password must be at least 8 characters long and contain at least one uppercase letter and one special character." });
+        return res.status(400).json({
+            success: false,
+            message:
+                "New password must be at least 8 characters long and contain at least one uppercase letter and one special character.",
+        });
     }
 
     try {
         const user = await User.findById(req.user.id).select("password");
         if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
         }
 
         const isMatch = await bcrypt.compare(currentPassword, user.password);
         if (!isMatch) {
-            return res.status(400).json({ success: false, message: "Current password is incorrect" });
+            return res
+                .status(400)
+                .json({ success: false, message: "Current password is incorrect" });
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-        user.password = hashedNewPassword;
+        user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         await user.save();
-
         res.json({ success: true, message: "Password updated successfully" });
     } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Get all users (Admin/HR only)
+// ─── Get All Users (Admin/HR) ─────────────────────────────────────────────────
 export async function getAllUsers(req, res) {
     try {
-        // Exclude passwords from the returned data
-        const users = await User.find().select("-password").populate('assignedHR', 'name email');
+        const users = await User.find()
+            .select("-password")
+            .populate("assignedHR", "name email");
         res.status(200).json({ success: true, count: users.length, users });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Reset user password by Admin/HR
+// ─── Admin/HR: Reset Another User's Password ─────────────────────────────────
 export async function adminResetPassword(req, res) {
     const { newPassword } = req.body;
     const userId = req.params.id;
-
     const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+
     if (!newPassword || !passwordRegex.test(newPassword)) {
-        return res.status(400).json({ success: false, message: "Password must be at least 8 characters long and contain at least one uppercase letter and one special character." });
+        return res.status(400).json({
+            success: false,
+            message:
+                "Password must be at least 8 characters long and contain at least one uppercase letter and one special character.",
+        });
     }
 
     try {
         const targetUser = await User.findById(userId);
         if (!targetUser) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-        targetUser.password = hashedNewPassword;
+        targetUser.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         await targetUser.save();
 
-        // Fire-and-forget email notification — password reset succeeds even if email fails
-        sendPasswordChangeEmail(targetUser.email, newPassword).catch(err => {
-            console.error('⚠️ Admin reset email notification failed (non-blocking):', err.message);
-        });
+        // Non-blocking email notification
+        sendPasswordChangeEmail(targetUser.email, newPassword).catch((err) =>
+            console.error("Password-change notification failed:", err.message)
+        );
 
-        res.json({ success: true, message: "Password reset successfully. User has been notified via email." });
+        res.json({
+            success: true,
+            message:
+                "Password reset successfully. User has been notified via email.",
+        });
     } catch (error) {
-        console.error('Error resetting password:', error);
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Verify Email Code
+// ─── Verify Email ─────────────────────────────────────────────────────────────
 export async function verifyEmail(req, res) {
     const { email, code } = req.body;
     if (!email || !code) {
-        return res.status(400).json({ success: false, message: "Email and verification code are required" });
+        return res
+            .status(400)
+            .json({
+                success: false,
+                message: "Email and verification code are required",
+            });
     }
 
     try {
         const user = await User.findOne({ email });
-        if (!user) return res.status(404).json({ success: false, message: "User not found" });
+        if (!user)
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
+        if (user.isVerified)
+            return res
+                .status(400)
+                .json({ success: false, message: "User is already verified" });
 
-        if (user.isVerified) return res.status(400).json({ success: false, message: "User is already verified" });
-
-        // Check if OTP is expired
         if (user.otpExpires && new Date() > user.otpExpires) {
-            return res.status(400).json({ success: true, message: "Verification code has expired. Please request a new one.", expired: true });
+            return res.status(400).json({
+                success: true,
+                message:
+                    "Verification code has expired. Please request a new one.",
+                expired: true,
+            });
         }
 
         if (user.verificationCode !== code.trim()) {
-            return res.status(400).json({ success: false, message: "Invalid verification code" });
+            return res
+                .status(400)
+                .json({ success: false, message: "Invalid verification code" });
         }
 
         user.isVerified = true;
@@ -277,75 +361,97 @@ export async function verifyEmail(req, res) {
         user.otpExpires = null;
         await user.save();
 
-        res.status(200).json({ success: true, message: "Email verified successfully. You can now login." });
+        res.status(200).json({
+            success: true,
+            message: "Email verified successfully. You can now login.",
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Resend OTP for Email Verification
+// ─── Resend OTP ───────────────────────────────────────────────────────────────
 export async function resendVerificationEmail(req, res) {
     const { email } = req.body;
     if (!email) {
-        return res.status(400).json({ success: false, message: "Email is required" });
+        return res
+            .status(400)
+            .json({ success: false, message: "Email is required" });
     }
 
     try {
         const user = await User.findOne({ email });
-        if (!user) return res.status(404).json({ success: false, message: "User not found" });
-        if (user.isVerified) return res.status(400).json({ success: false, message: "User is already verified" });
+        if (!user)
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
+        if (user.isVerified)
+            return res
+                .status(400)
+                .json({ success: false, message: "User is already verified" });
 
-        // Generate new 6-digit code
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const verificationCode = Math.floor(
+            100000 + Math.random() * 900000
+        ).toString();
         user.verificationCode = verificationCode;
-        user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // Reset expiry to 10 mins
+        user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
         await user.save();
 
-        const emailSent = await sendVerificationEmail(user.email, verificationCode);
-        if (!emailSent) {
-            // Code is saved in DB and logged to console — user can still verify
-            return res.status(200).json({
-                success: true,
-                message: "Verification code generated. Email delivery may be delayed — check your inbox shortly.",
-                warning: "Email provider may be experiencing delays"
-            });
-        }
-        res.status(200).json({ success: true, message: "Verification code resent successfully" });
+        const emailResult = await sendVerificationEmail(user.email, verificationCode);
+        console.log(
+            ` Resend OTP for ${user.email}: ${verificationCode} | Email sent: ${emailResult.success}`
+        );
+
+        res.status(200).json({
+            success: true,
+            message:
+                "Verification code resent successfully." +
+                (!emailResult.success
+                    ? " (Email delivery may be delayed — check server logs for the code)"
+                    : ""),
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Approve or Deny User
+// ─── Toggle User Approval ─────────────────────────────────────────────────────
 export async function toggleUserApproval(req, res) {
-    const { userId, approve } = req.body; // approve is a boolean
+    const { userId, approve } = req.body;
 
     try {
         const userToUpdate = await User.findById(userId);
         if (!userToUpdate) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
         }
 
-        // Check permissions: Admin can approve anyone. HR can only approve staff.
-        if (req.user.role === 'hr' && userToUpdate.role !== 'staff') {
-            return res.status(403).json({ success: false, message: "HR can only approve Staff members." });
+        if (req.user.role === "hr" && userToUpdate.role !== "staff") {
+            return res
+                .status(403)
+                .json({ success: false, message: "HR can only approve Staff members." });
         }
 
         userToUpdate.isApproved = approve;
 
-        // Automatic HR allocation on approval for Staff
-        if (approve && userToUpdate.role === 'staff' && !userToUpdate.assignedHR) {
-            // Prioritize the approving HR if they have room (< 10)
-            if (req.user.role === 'hr') {
-                const myTeamCount = await User.countDocuments({ assignedHR: req.user._id });
+        // Auto HR allocation on Staff approval
+        if (approve && userToUpdate.role === "staff" && !userToUpdate.assignedHR) {
+            if (req.user.role === "hr") {
+                const myTeamCount = await User.countDocuments({
+                    assignedHR: req.user._id,
+                });
                 if (myTeamCount < 10) {
                     userToUpdate.assignedHR = req.user._id;
                 }
             }
 
-            // If still not assigned (Admin approved or HR was full), find another available HR
             if (!userToUpdate.assignedHR) {
-                const hrs = await User.find({ role: 'hr', isApproved: true });
+                const hrs = await User.find({ role: "hr", isApproved: true });
                 for (const hr of hrs) {
                     const count = await User.countDocuments({ assignedHR: hr._id });
                     if (count < 10) {
@@ -357,189 +463,262 @@ export async function toggleUserApproval(req, res) {
         }
 
         await userToUpdate.save();
-
         res.status(200).json({
             success: true,
-            message: `User ${approve ? 'approved' : 'denied'} successfully.`,
-            user: { id: userToUpdate._id, name: userToUpdate.name, role: userToUpdate.role, isApproved: userToUpdate.isApproved }
+            message: `User ${approve ? "approved" : "denied"} successfully.`,
+            user: {
+                id: userToUpdate._id,
+                name: userToUpdate.name,
+                role: userToUpdate.role,
+                isApproved: userToUpdate.isApproved,
+            },
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
+// ─── Assign HR to Staff ───────────────────────────────────────────────────────
 export const assignHRToStaff = async (req, res) => {
     try {
         const { userId, hrId } = req.body;
         const targetStaff = await User.findById(userId);
 
         if (!targetStaff) {
-            return res.status(404).json({ success: false, message: "Staff member not found" });
+            return res
+                .status(404)
+                .json({ success: false, message: "Staff member not found" });
         }
 
-        // Permissions: Admin can assign anyone to any HR. HR can only "claim" staff (assign to self).
-        const finalHrId = req.user.role === 'admin' ? hrId : req.user._id;
+        const finalHrId = req.user.role === "admin" ? hrId : req.user._id;
 
-        if (req.user.role === 'hr' && hrId && hrId !== req.user._id.toString()) {
-            return res.status(403).json({ success: false, message: "HR can only assign staff to themselves." });
+        if (req.user.role === "hr" && hrId && hrId !== req.user._id.toString()) {
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    message: "HR can only assign staff to themselves.",
+                });
         }
 
         if (finalHrId) {
             const hrManager = await User.findById(finalHrId);
-            if (!hrManager || hrManager.role !== 'hr') {
-                return res.status(400).json({ success: false, message: "Invalid HR manager" });
+            if (!hrManager || hrManager.role !== "hr") {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "Invalid HR manager" });
             }
 
-            // Check team capacity (max 10)
             const teamCount = await User.countDocuments({ assignedHR: finalHrId });
-            if (teamCount >= 10 && targetStaff.assignedHR?.toString() !== finalHrId) {
-                return res.status(400).json({ success: false, message: "This HR team is already at maximum capacity (10)." });
+            if (
+                teamCount >= 10 &&
+                targetStaff.assignedHR?.toString() !== finalHrId
+            ) {
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        message: "This HR team is already at maximum capacity (10).",
+                    });
             }
 
             targetStaff.assignedHR = finalHrId;
         } else {
-            // Unassign
             targetStaff.assignedHR = null;
         }
 
         await targetStaff.save();
-
         res.status(200).json({
             success: true,
-            message: finalHrId ? "Staff assigned successfully" : "Staff unallocated successfully",
-            user: targetStaff
+            message: finalHrId
+                ? "Staff assigned successfully"
+                : "Staff unallocated successfully",
+            user: targetStaff,
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 };
 
-// Forgot Password - Send OTP
+// ─── Forgot Password ──────────────────────────────────────────────────────────
 export async function forgotPassword(req, res) {
     const { email } = req.body;
     if (!email || !validator.isEmail(email)) {
-        return res.status(400).json({ success: false, message: "Valid email is required" });
+        return res
+            .status(400)
+            .json({ success: false, message: "Valid email is required" });
     }
 
     try {
         const user = await User.findOne({ email });
         if (!user) {
-            // Security: return same message whether email exists or not (prevents user enumeration)
-            return res.status(200).json({ success: true, message: "If an account with that email exists, a reset code has been sent." });
+            // Security: don't reveal whether the email exists
+            return res.status(200).json({
+                success: true,
+                message:
+                    "If an account with that email exists, a reset code has been sent.",
+            });
         }
 
-        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const resetCode = Math.floor(
+            100000 + Math.random() * 900000
+        ).toString();
         user.resetPasswordToken = resetCode;
-        user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
         await user.save();
 
-        const emailSent = await sendForgotPasswordEmail(user.email, resetCode);
+        const emailResult = await sendForgotPasswordEmail(user.email, resetCode);
+        console.log(
+            `🔑 Forgot-password OTP for ${user.email}: ${resetCode} | Email sent: ${emailResult.success}`
+        );
 
-        // Always return 200 — the code is saved in DB and console-logged regardless
         res.status(200).json({
             success: true,
-            message: emailSent
-                ? "If an account with that email exists, a reset code has been sent."
-                : "Reset code generated. Email delivery may be delayed — please check your inbox shortly."
+            message:
+                "If an account with that email exists, a reset code has been sent." +
+                (!emailResult.success
+                    ? " (Email delivery may be delayed — please check server logs)"
+                    : ""),
         });
     } catch (error) {
-        console.error('forgotPassword error:', error.message);
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Reset Password - Verify OTP and Change Password
+// ─── Reset Password ───────────────────────────────────────────────────────────
 export async function resetPassword(req, res) {
     const { email, code, newPassword } = req.body;
 
     if (!email || !code || !newPassword) {
-        return res.status(400).json({ success: false, message: "Email, code, and new password are required" });
+        return res
+            .status(400)
+            .json({
+                success: false,
+                message: "Email, code, and new password are required",
+            });
     }
 
     const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
     if (!passwordRegex.test(newPassword)) {
-        return res.status(400).json({ success: false, message: "Password must be at least 8 characters long and contain at least one uppercase letter and one special character." });
+        return res.status(400).json({
+            success: false,
+            message:
+                "Password must be at least 8 characters long and contain at least one uppercase letter and one special character.",
+        });
     }
 
     try {
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
         }
 
-        if (user.resetPasswordExpires && new Date() > user.resetPasswordExpires) {
-            return res.status(400).json({ success: false, message: "Reset code has expired. Please request a new one." });
+        if (
+            user.resetPasswordExpires &&
+            new Date() > user.resetPasswordExpires
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Reset code has expired. Please request a new one.",
+            });
         }
 
         if (user.resetPasswordToken !== code.trim()) {
-            return res.status(400).json({ success: false, message: "Invalid reset code" });
+            return res
+                .status(400)
+                .json({ success: false, message: "Invalid reset code" });
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-        user.password = hashedNewPassword;
+        user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         user.resetPasswordToken = null;
         user.resetPasswordExpires = null;
         await user.save();
 
-        res.status(200).json({ success: true, message: "Password has been successfully reset. You can now log in." });
+        res.status(200).json({
+            success: true,
+            message:
+                "Password has been successfully reset. You can now log in.",
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res
+            .status(500)
+            .json({ success: false, message: "Server error", error: error.message });
     }
 }
 
-// Email Diagnostics Endpoint
+// ─── SMTP Diagnostics ─────────────────────────────────────────────────────────
 export async function testSMTPConnection(req, res) {
     const toEmail = req.query.email || process.env.EMAIL_USER;
-    const transportMethod = getTransportMethod();
+
+    // Report current email configuration status
+    const config = {
+        EMAIL_USER: process.env.EMAIL_USER || "NOT SET",
+        EMAIL_PASS_SET: !!process.env.EMAIL_PASS,
+        RESEND_API_KEY_SET: !!process.env.RESEND_API_KEY,
+        BREVO_API_KEY_SET: !!process.env.BREVO_API_KEY,
+        SENDGRID_API_KEY_SET: !!process.env.SENDGRID_API_KEY,
+        NODE_ENV: process.env.NODE_ENV || "not set",
+    };
+
+    console.log("🧪 SMTP Diagnostics requested:", config);
+
+    // If no email services configured at all
+    if (
+        !process.env.EMAIL_USER &&
+        !process.env.RESEND_API_KEY &&
+        !process.env.BREVO_API_KEY &&
+        !process.env.SENDGRID_API_KEY
+    ) {
+        return res.status(503).json({
+            success: false,
+            message:
+                "No email service configured. Set RESEND_API_KEY (recommended), BREVO_API_KEY, SENDGRID_API_KEY, or EMAIL_USER + EMAIL_PASS in your environment variables.",
+            config,
+            recommendation:
+                "Render free tier blocks SMTP. Use Resend (https://resend.com) and set RESEND_API_KEY.",
+        });
+    }
 
     try {
-        console.log(`🧪 Running email diagnostics (method: ${transportMethod}, to: ${toEmail})...`);
+        console.log(`🧪 Running email diagnostics (to: ${toEmail})...`);
 
-        // 1. Verify email transport configuration
+        // 1. Verify email transport settings
         await verifySMTP();
 
-        // 2. Try sending test email
+        // 2. Send test email if requested
         if (toEmail) {
-            await sendTestEmail(toEmail);
+            const emailResult = await sendTestEmail(toEmail);
+            if (!emailResult.success) {
+                throw new Error(emailResult.error || "Failed to send test email");
+            }
             return res.status(200).json({
                 success: true,
-                message: `✅ Email test passed! Sent to ${toEmail} via ${transportMethod}.`,
-                transport: transportMethod,
-                config: {
-                    EMAIL_USER: process.env.EMAIL_USER || 'NOT SET',
-                    EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
-                    RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY,
-                    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-                    BREVO_API_KEY_CONFIGURED: !!process.env.BREVO_API_KEY,
-                    SENDGRID_API_KEY_CONFIGURED: !!process.env.SENDGRID_API_KEY,
-                },
-                recommendation: transportMethod === 'Gmail SMTP'
-                    ? '⚠️ You are using Gmail SMTP. Render free-tier blocks ports 465/587. Add RESEND_API_KEY to fix.'
-                    : null
+                message: `✅ Email test passed! Sent to ${toEmail}.`,
+                config
             });
         }
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: `Email configuration valid via ${transportMethod}. No test email sent (no target email).`,
-            transport: transportMethod
+            message: "Email configuration is valid. (No test email sent because target email is empty).",
+            config
         });
     } catch (error) {
         console.error("❌ Email Diagnostics Failed:", error.message);
         res.status(500).json({
             success: false,
-            message: `Email Diagnostics Failed (${transportMethod}).`,
+            message: "Email Diagnostics Failed. Please verify your environment variables.",
             error: error.message,
-            transport: transportMethod,
-            config: {
-                EMAIL_USER: process.env.EMAIL_USER || "NOT SET",
-                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
-                RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY,
-                RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'NOT SET'
-            },
-            recommendation: transportMethod === 'Gmail SMTP'
-                ? '🔧 Render free-tier blocks SMTP ports 465/587. Sign up at resend.com and add RESEND_API_KEY to your Render environment variables.'
-                : '🔧 Check that your API key is valid and the sender email/domain is verified.'
+            config,
+            recommendation: "Ensure your credentials are correct and any domain constraints are respected."
         });
     }
 }

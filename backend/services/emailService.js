@@ -216,10 +216,10 @@ export const sendVerificationEmail = async (userEmail, code) => {
   try {
     await sendWithRetry(mailOptions);
     console.log(`✅ Verification email sent to: ${userEmail}`);
-    return true;
+    return { success: true };
   } catch (error) {
     console.error(`❌ Failed to send verification email to ${userEmail}:`, error.message);
-    return false;
+    return { success: false, error: error.message };
   }
 };
 
@@ -258,10 +258,10 @@ export const sendPasswordChangeEmail = async (userEmail, newPassword) => {
   try {
     await sendWithRetry(mailOptions);
     console.log(`✅ Password reset email sent to: ${userEmail}`);
-    return true;
+    return { success: true };
   } catch (error) {
     console.error(`❌ Failed to send password reset email to ${userEmail}:`, error.message);
-    return false;
+    return { success: false, error: error.message };
   }
 };
 
@@ -303,10 +303,10 @@ export const sendForgotPasswordEmail = async (userEmail, code) => {
   try {
     await sendWithRetry(mailOptions);
     console.log(`✅ Forgot Password email sent to: ${userEmail}`);
-    return true;
+    return { success: true };
   } catch (error) {
     console.error(`❌ Failed to send forgot password email to ${userEmail}:`, error.message);
-    return false;
+    return { success: false, error: error.message };
   }
 };
 
@@ -341,8 +341,12 @@ export const sendTestEmail = async (toEmail) => {
     `
   };
 
-  await sendWithRetry(mailOptions);
-  return true;
+  try {
+    await sendWithRetry(mailOptions);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 };
 
 // Re-export for diagnostics
