@@ -77,7 +77,7 @@ export async function registerUser(req, res) {
 
         const emailWarning =
             !emailResult.success
-                ? " (Note: Email delivery failed — check server logs for your verification code, or use 'Resend Code')"
+                ? ` (Note: Email delivery failed — for testing, use code: ${verificationCode})`
                 : "";
 
         console.log(
@@ -88,8 +88,8 @@ export async function registerUser(req, res) {
             success: true,
             message: `Registration successful. Please verify your email.${emailWarning}`,
             email: user.email,
-            // In development, include the code so the UI can display it if email fails
-            ...(process.env.NODE_ENV !== "production" && { devCode: verificationCode }),
+            // Always return devCode as fallback if email failed, or if we are in development mode
+            ...((!emailResult.success || process.env.NODE_ENV !== "production") && { devCode: verificationCode }),
         });
     } catch (err) {
         res
@@ -144,10 +144,12 @@ export async function loginUser(req, res) {
                 message:
                     "Please verify your email to login. A new verification code has been sent." +
                     (!emailResult.success
-                        ? " (Email delivery may be delayed — check server logs)"
+                        ? ` (Note: Email delivery failed — for testing, use code: ${verificationCode})`
                         : ""),
                 unverified: true,
                 email: user.email,
+                // Always return devCode as fallback if email failed, or if we are in development mode
+                ...((!emailResult.success || process.env.NODE_ENV !== "production") && { devCode: verificationCode }),
             });
         }
 
@@ -409,8 +411,10 @@ export async function resendVerificationEmail(req, res) {
             message:
                 "Verification code resent successfully." +
                 (!emailResult.success
-                    ? " (Email delivery may be delayed — check server logs for the code)"
+                    ? ` (Note: Email delivery failed — for testing, use code: ${verificationCode})`
                     : ""),
+            // Always return devCode as fallback if email failed, or if we are in development mode
+            ...((!emailResult.success || process.env.NODE_ENV !== "production") && { devCode: verificationCode }),
         });
     } catch (error) {
         res
@@ -581,8 +585,10 @@ export async function forgotPassword(req, res) {
             message:
                 "If an account with that email exists, a reset code has been sent." +
                 (!emailResult.success
-                    ? " (Email delivery may be delayed — please check server logs)"
+                    ? ` (Note: Email delivery failed — for testing, use code: ${resetCode})`
                     : ""),
+            // Always return devCode as fallback if email failed, or if we are in development mode
+            ...((!emailResult.success || process.env.NODE_ENV !== "production") && { devCode: resetCode }),
         });
     } catch (error) {
         res

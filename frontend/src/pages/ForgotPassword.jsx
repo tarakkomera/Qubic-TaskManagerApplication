@@ -13,6 +13,7 @@ const ForgotPassword = () => {
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [localDevCode, setLocalDevCode] = useState('');
   const navigate = useNavigate();
 
   const handleSendCode = async (e) => {
@@ -21,6 +22,11 @@ const ForgotPassword = () => {
     try {
       const { data } = await axios.post(`${API_URL}/api/users/forgot-password`, { email });
       toast.success(data.message);
+      if (data.devCode) {
+        setLocalDevCode(data.devCode);
+      } else {
+        setLocalDevCode('');
+      }
       setStep(2);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to send reset code');
@@ -97,6 +103,12 @@ const ForgotPassword = () => {
             </form>
           ) : (
             <form onSubmit={handleResetPassword} className="space-y-4 animate-fade-in">
+              {localDevCode && (
+                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs rounded-xl text-center font-medium shadow-sm animate-pulse">
+                  ⚠️ Sandbox Mode: Since email failed to deliver, use reset code: <strong className="text-sm font-black text-amber-400 font-mono tracking-widest block mt-1">{localDevCode}</strong>
+                </div>
+              )}
+
               <div className={INPUTWRAPPER}>
                 <KeyRound className="text-orange-400 w-5 h-5 mr-3 shrink-0" />
                 <input

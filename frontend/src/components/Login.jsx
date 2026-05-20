@@ -64,7 +64,7 @@ const Login = ({ onSubmit, onSwitchMode }) => {
     } catch (err) {
       if (err.response?.data?.unverified) {
         toast.error(err.response.data.message);
-        setTimeout(() => navigate('/verify', { state: { email: err.response.data.email } }), 1500);
+        setTimeout(() => navigate('/verify', { state: { email: err.response.data.email, devCode: err.response.data.devCode } }), 1500);
         return;
       }
       if (err.response?.data?.notApproved) {

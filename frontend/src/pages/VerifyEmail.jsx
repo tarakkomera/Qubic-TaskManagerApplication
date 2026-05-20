@@ -16,8 +16,9 @@ const VerifyEmail = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Extract email from navigation state, or fallback if user navigated directly
+  // Extract email and potential devCode from navigation state
   const email = location.state?.email || '';
+  const [localDevCode, setLocalDevCode] = useState(location.state?.devCode || '');
 
   useEffect(() => {
     if (!email) {
@@ -63,6 +64,11 @@ const VerifyEmail = () => {
       const { data } = await axios.post(`${import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4000/api'}/users/resend-otp`, { email });
       if (data.success) {
         toast.success(data.message);
+        if (data.devCode) {
+          setLocalDevCode(data.devCode);
+        } else {
+          setLocalDevCode('');
+        }
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to resend code');
@@ -89,10 +95,16 @@ const VerifyEmail = () => {
             <MailCheck className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Verify Your Email</h2>
-          <p className="text-gray-500 text-sm mt-2">
+          <p className="text-gray-500 text-sm mt-2 mb-4">
             We've sent a 6-digit verification code to <br />
             <span className="font-semibold text-indigo-600">{email}</span>
           </p>
+
+          {localDevCode && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl text-center font-medium shadow-sm animate-pulse animate-duration-1000">
+              ⚠️ Sandbox Mode: Since email failed to deliver, use verification code: <strong className="text-sm font-black text-amber-900 font-mono tracking-widest block mt-1">{localDevCode}</strong>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

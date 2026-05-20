@@ -55,7 +55,7 @@ const Signup = ({ onSwitchMode, onSubmit }) => {
         toast.success("Account created! Redirecting...");
       } else {
         setMessage({ text: data.message || "Signup successful! Please verify your email.", type: "success" });
-        setTimeout(() => navigate('/verify', { state: { email: formData.email } }), 1500);
+        setTimeout(() => navigate('/verify', { state: { email: formData.email, devCode: data.devCode } }), 1500);
       }
       setFormData(INITIAL_FORM);
     } catch (error) {
