@@ -1,69 +1,74 @@
 import nodemailer from 'nodemailer';
-import fs from 'fs';
-import path from 'path';
 
-const LOG_FILE = path.join(process.cwd(), 'emails.log');
-
-const logEmailLocally = (type, recipient, content) => {
-  const entry = `
-==============================================
-📧 ${type} to: ${recipient}
-Date: ${new Date().toLocaleString()}
-Content: ${content}
-==============================================
-`;
-  try {
-    fs.appendFileSync(LOG_FILE, entry);
-    console.log(`\n📬 [LOCAL LOG] ${type} for ${recipient} has been recorded in emails.log`);
-  } catch (err) {
-    console.warn(`⚠️ [LOCAL LOG WARNING] Failed to write email to emails.log (normal in serverless/read-only environments like Vercel):`, err.message);
-    console.log(`📬 [LOGGED EMAIL DETAILS] ${type} for ${recipient}: ${content}`);
-  }
+// ─── Detect active email transport method ────────────────────────────────────
+const getTransportMethod = () => {
+  if (process.env.RESEND_API_KEY) return 'Resend HTTP API';
+  if (process.env.BREVO_API_KEY) return 'Brevo HTTP API';
+  if (process.env.SENDGRID_API_KEY) return 'SendGrid HTTP API';
+  return 'Gmail SMTP';
 };
 
-// ─── Single shared transporter with connection pooling ───────────────────────
-// Reusing one transporter avoids the overhead of a new TCP+TLS handshake per email.
+// ─── Console OTP Logger ──────────────────────────────────────────────────────
+// Always prints OTP codes to console so they can be found in Render's Logs tab
+// even if email delivery completely fails. This is the ultimate safety net.
+const logOTPToConsole = (type, recipient, code) => {
+  console.log(`
+╔══════════════════════════════════════════════════╗
+║  📧 ${type}
+║  To: ${recipient}
+║  Code: ${code}
+║  Time: ${new Date().toISOString()}
+║  Transport: ${getTransportMethod()}
+╚══════════════════════════════════════════════════╝
+`);
+};
+
+// ─── Single shared transporter (SMTP fallback only) ──────────────────────────
 let transporter = null;
 
 const getTransporter = () => {
   if (transporter) return transporter;
 
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('⚠️ WARNING: EMAIL_USER or EMAIL_PASS is not defined in environment variables');
+    console.warn('⚠️ EMAIL_USER or EMAIL_PASS not set — SMTP will not work');
+    return null;
   }
 
-  // Connection pooling is excellent for long-running servers (e.g. Render/AWS EC2)
-  // but causes dead/orphaned sockets in serverless functions (e.g. Vercel/AWS Lambda)
   const isServerless = !!process.env.VERCEL;
 
-  transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    pool: !isServerless,      // Disable connection pooling in serverless environments
-    maxConnections: 3,       // Max simultaneous connections (only active if pooling)
-    maxMessages: 50,         // Max messages per connection before reconnecting
-    rateDelta: 1000,         // Rate limit: 1 second window
-    rateLimit: 5,            // Max 5 messages per second
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS?.replace(/\s/g, ''),
-    },
-    // Connection timeouts to prevent hanging
-    connectionTimeout: 10000,  // 10s to establish connection
-    greetingTimeout: 10000,    // 10s for SMTP greeting
-    socketTimeout: 15000,      // 15s for socket inactivity
-  });
+  try {
+    transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      pool: !isServerless,
+      maxConnections: 3,
+      maxMessages: 50,
+      rateDelta: 1000,
+      rateLimit: 5,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS.replace(/\s/g, ''),
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+  } catch (err) {
+    console.error('❌ Failed to create SMTP transporter:', err.message);
+    transporter = null;
+    return null;
+  }
 
   return transporter;
 };
 
-// ─── HTTP API Sender (to bypass Render free-tier SMTP blocks) ────────────────
+// ─── HTTP API Sender (bypasses Render SMTP port blocks) ──────────────────────
 const sendViaHTTPAPI = async (mailOptions) => {
   // 1. Resend API
   if (process.env.RESEND_API_KEY) {
     const fromAddress = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-    console.log(`📬 Sending email via Resend HTTP API... (from: ${fromAddress}, to: ${mailOptions.to}, key prefix: ${process.env.RESEND_API_KEY.substring(0, 8)}...)`);
+    console.log(`📬 Resend API → from: ${fromAddress}, to: ${mailOptions.to}`);
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -72,22 +77,23 @@ const sendViaHTTPAPI = async (mailOptions) => {
       },
       body: JSON.stringify({
         from: fromAddress,
-        to: mailOptions.to,
+        to: Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to],
         subject: mailOptions.subject,
         html: mailOptions.html
       })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(`Resend API Error: ${data.message || response.statusText}`);
+      throw new Error(`Resend API Error (${response.status}): ${data.message || response.statusText}`);
     }
+    console.log('✅ Resend API sent successfully, id:', data.id);
     return true;
   }
 
   // 2. Brevo (Sendinblue) API
   if (process.env.BREVO_API_KEY) {
-    console.log('📬 Sending email via Brevo HTTP API...');
     const senderEmail = process.env.EMAIL_USER || 'qubicapplication@gmail.com';
+    console.log(`📬 Brevo API → from: ${senderEmail}, to: ${mailOptions.to}`);
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -104,15 +110,15 @@ const sendViaHTTPAPI = async (mailOptions) => {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(`Brevo API Error: ${data.message || response.statusText}`);
+      throw new Error(`Brevo API Error (${response.status}): ${data.message || response.statusText}`);
     }
     return true;
   }
 
   // 3. SendGrid API
   if (process.env.SENDGRID_API_KEY) {
-    console.log('📬 Sending email via SendGrid HTTP API...');
     const senderEmail = process.env.EMAIL_USER || 'qubicapplication@gmail.com';
+    console.log(`📬 SendGrid API → from: ${senderEmail}, to: ${mailOptions.to}`);
     const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -128,7 +134,7 @@ const sendViaHTTPAPI = async (mailOptions) => {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      throw new Error(`SendGrid API Error: ${data.errors?.[0]?.message || response.statusText}`);
+      throw new Error(`SendGrid API Error (${response.status}): ${data.errors?.[0]?.message || response.statusText}`);
     }
     return true;
   }
@@ -136,81 +142,70 @@ const sendViaHTTPAPI = async (mailOptions) => {
   return false;
 };
 
-// ─── Retry helper with exponential backoff ──────────────────────────────────
-const sendWithRetry = async (mailOptions, maxRetries = 3) => {
-  // Check if any HTTP API key is configured to bypass SMTP port blocking
-  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY) {
+// ─── Send with retry + automatic HTTP/SMTP routing ──────────────────────────
+const sendWithRetry = async (mailOptions, maxRetries = 2) => {
+  const hasHTTPAPI = process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY;
+
+  // Try HTTP API first (works on Render free-tier where SMTP is blocked)
+  if (hasHTTPAPI) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await sendViaHTTPAPI(mailOptions);
-        return true;
+        const result = await sendViaHTTPAPI(mailOptions);
+        if (result) return true;
       } catch (error) {
         console.error(`📧 HTTP API attempt ${attempt}/${maxRetries} failed:`, error.message);
         if (attempt === maxRetries) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
-    return;
   }
 
-  // Fallback to SMTP
+  // Fallback to SMTP (only works if SMTP ports are not blocked)
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const t = getTransporter();
-      if (!t) throw new Error('Transporter not available');
+      if (!t) throw new Error('SMTP transporter not available — EMAIL_USER/EMAIL_PASS missing');
       await t.sendMail(mailOptions);
       return true;
     } catch (error) {
-      console.error(`📧 SMTP Send attempt ${attempt}/${maxRetries} failed:`, error.message);
+      console.error(`📧 SMTP attempt ${attempt}/${maxRetries} failed:`, error.message);
       if (attempt === maxRetries) {
-        // Reset transporter on final failure so next email gets a fresh connection
-        transporter = null;
+        transporter = null; // Reset so next call gets a fresh connection
         throw error;
       }
-      // Exponential backoff: 1s, 2s, 4s
-      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
   }
 };
 
-// ─── Fire-and-forget email sender (non-blocking) ────────────────────────────
-// All email functions below return immediately; the actual send happens in the background.
-// This prevents email delivery from blocking the HTTP response.
-
-// ─── Send Email Verification OTP ─────────────────────────────────────────────
+// ─── Send Verification Email ─────────────────────────────────────────────────
 export const sendVerificationEmail = async (userEmail, code) => {
+  // ALWAYS log the code to console — safety net for Render logs
+  logOTPToConsole('VERIFICATION CODE', userEmail, code);
+
   const mailOptions = {
-    from: `"Qubic App" <${process.env.EMAIL_USER}>`,
+    from: `"Qubic App" <${process.env.EMAIL_USER || 'noreply@qubic.app'}>`,
     to: userEmail,
     subject: '🔐 Verify Your Qubic Account',
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0f172a; color: #f1f5f9; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
-        
-        <!-- Header -->
         <div style="background: linear-gradient(135deg, #14b8a6, #06b6d4, #3b82f6); padding: 32px 40px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">⚡ Qubic</h1>
           <p style="margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.85); font-weight: 500;">Task Management Platform</p>
         </div>
-
-        <!-- Body -->
         <div style="padding: 36px 40px;">
           <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #f1f5f9;">Verify Your Email Address</h2>
           <p style="margin: 0 0 28px; font-size: 14px; color: #94a3b8; line-height: 1.6;">
             Thanks for registering! Use the 6-digit code below to verify your account. This code expires in <strong style="color: #f1f5f9;">10 minutes</strong>.
           </p>
-
-          <!-- OTP Box -->
           <div style="background: #1e293b; border: 2px solid #06b6d4; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 28px;">
             <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #64748b;">Your Verification Code</p>
             <p style="margin: 0; font-size: 42px; font-weight: 900; letter-spacing: 10px; color: #22d3ee; font-family: 'Courier New', monospace;">${code}</p>
           </div>
-
           <p style="margin: 0; font-size: 13px; color: #64748b; line-height: 1.6;">
             If you didn't create an account on Qubic, you can safely ignore this email.
           </p>
         </div>
-
-        <!-- Footer -->
         <div style="padding: 20px 40px; background: #0f172a; border-top: 1px solid #1e293b; text-align: center;">
           <p style="margin: 0; font-size: 12px; color: #475569;">© ${new Date().getFullYear()} Qubic Task Manager. All rights reserved.</p>
         </div>
@@ -221,47 +216,38 @@ export const sendVerificationEmail = async (userEmail, code) => {
   try {
     await sendWithRetry(mailOptions);
     console.log(`✅ Verification email sent to: ${userEmail}`);
-    logEmailLocally('VERIFICATION OTP', userEmail, `Verification Code: ${code}`);
     return true;
   } catch (error) {
-    console.error('❌ Failed to send verification email:', error.message);
-    logEmailLocally('VERIFICATION OTP (REAL SEND FAILED)', userEmail, `Verification Code: ${code} \nError: ${error.message}`);
+    console.error(`❌ Failed to send verification email to ${userEmail}:`, error.message);
     return false;
   }
 };
 
-// ─── Send Password Reset Notification ────────────────────────────────────────
+// ─── Send Password Change Notification ───────────────────────────────────────
 export const sendPasswordChangeEmail = async (userEmail, newPassword) => {
+  logOTPToConsole('PASSWORD RESET', userEmail, newPassword);
+
   const mailOptions = {
-    from: `"Qubic App" <${process.env.EMAIL_USER}>`,
+    from: `"Qubic App" <${process.env.EMAIL_USER || 'noreply@qubic.app'}>`,
     to: userEmail,
     subject: '🔑 Your Qubic Password Has Been Reset',
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0f172a; color: #f1f5f9; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
-        
-        <!-- Header -->
         <div style="background: linear-gradient(135deg, #14b8a6, #06b6d4, #3b82f6); padding: 32px 40px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">⚡ Qubic</h1>
           <p style="margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.85); font-weight: 500;">Task Management Platform</p>
         </div>
-
-        <!-- Body -->
         <div style="padding: 36px 40px;">
           <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #f1f5f9;">Password Reset Notice</h2>
           <p style="margin: 0 0 24px; font-size: 14px; color: #94a3b8; line-height: 1.6;">
             Your administrator has reset your account password. Your new temporary credentials are below.
           </p>
-
-          <!-- Password Box -->
           <div style="background: #1e293b; border: 2px solid #f59e0b; border-radius: 12px; padding: 20px 24px; margin-bottom: 28px;">
             <p style="margin: 0 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #64748b;">New Temporary Password</p>
             <p style="margin: 0; font-size: 22px; font-weight: 800; color: #fbbf24; font-family: 'Courier New', monospace;">${newPassword}</p>
           </div>
-
           <p style="margin: 0; font-size: 13px; color: #ef4444; font-weight: 600;">⚠️ Please log in and change this password immediately from your Profile Settings.</p>
         </div>
-
-        <!-- Footer -->
         <div style="padding: 20px 40px; background: #0f172a; border-top: 1px solid #1e293b; text-align: center;">
           <p style="margin: 0; font-size: 12px; color: #475569;">© ${new Date().getFullYear()} Qubic Task Manager. All rights reserved.</p>
         </div>
@@ -272,45 +258,41 @@ export const sendPasswordChangeEmail = async (userEmail, newPassword) => {
   try {
     await sendWithRetry(mailOptions);
     console.log(`✅ Password reset email sent to: ${userEmail}`);
-    logEmailLocally('PASSWORD RESET', userEmail, `New Password: ${newPassword}`);
     return true;
   } catch (error) {
-    console.error('❌ Failed to send password reset email:', error.message);
-    logEmailLocally('PASSWORD RESET (REAL SEND FAILED)', userEmail, `New Password: ${newPassword} \nError: ${error.message}`);
+    console.error(`❌ Failed to send password reset email to ${userEmail}:`, error.message);
     return false;
   }
 };
 
 // ─── Send Forgot Password Code ───────────────────────────────────────────────
 export const sendForgotPasswordEmail = async (userEmail, code) => {
+  // ALWAYS log the code to console — safety net for Render logs
+  logOTPToConsole('FORGOT PASSWORD CODE', userEmail, code);
+
   const mailOptions = {
-    from: `"Qubic App" <${process.env.EMAIL_USER}>`,
+    from: `"Qubic App" <${process.env.EMAIL_USER || 'noreply@qubic.app'}>`,
     to: userEmail,
     subject: '🔐 Reset Your Qubic Password',
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0f172a; color: #f1f5f9; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
-        
         <div style="background: linear-gradient(135deg, #f43f5e, #fb923c); padding: 32px 40px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">⚡ Qubic</h1>
           <p style="margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.85); font-weight: 500;">Password Recovery</p>
         </div>
-
         <div style="padding: 36px 40px;">
           <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #f1f5f9;">Reset Your Password</h2>
           <p style="margin: 0 0 28px; font-size: 14px; color: #94a3b8; line-height: 1.6;">
             We received a request to reset your password. Use the 6-digit code below to set a new password. This code expires in <strong style="color: #f1f5f9;">10 minutes</strong>.
           </p>
-
           <div style="background: #1e293b; border: 2px solid #fb923c; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 28px;">
             <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #64748b;">Your Reset Code</p>
             <p style="margin: 0; font-size: 42px; font-weight: 900; letter-spacing: 10px; color: #fb923c; font-family: 'Courier New', monospace;">${code}</p>
           </div>
-
           <p style="margin: 0; font-size: 13px; color: #64748b; line-height: 1.6;">
             If you did not request this, you can safely ignore this email and your password will remain unchanged.
           </p>
         </div>
-
         <div style="padding: 20px 40px; background: #0f172a; border-top: 1px solid #1e293b; text-align: center;">
           <p style="margin: 0; font-size: 12px; color: #475569;">© ${new Date().getFullYear()} Qubic Task Manager. All rights reserved.</p>
         </div>
@@ -321,33 +303,31 @@ export const sendForgotPasswordEmail = async (userEmail, code) => {
   try {
     await sendWithRetry(mailOptions);
     console.log(`✅ Forgot Password email sent to: ${userEmail}`);
-    logEmailLocally('FORGOT PASSWORD OTP', userEmail, `Reset Code: ${code}`);
     return true;
   } catch (error) {
-    console.error('❌ Failed to send forgot password email:', error.message);
-    logEmailLocally('FORGOT PASSWORD OTP (REAL SEND FAILED)', userEmail, `Reset Code: ${code} \nError: ${error.message}`);
+    console.error(`❌ Failed to send forgot password email to ${userEmail}:`, error.message);
     return false;
   }
 };
 
-// ─── SMTP Diagnostics for Production ─────────────────────────────────────────
+// ─── Email Transport Diagnostics ─────────────────────────────────────────────
 export const verifySMTP = async () => {
-  // If an HTTP email API is configured, SMTP verification is unnecessary
-  // (Render free-tier blocks SMTP ports 465/587, so verify() would always fail)
+  // If HTTP API is configured, SMTP verify is irrelevant (Render blocks SMTP ports)
   if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY) {
-    console.log('✅ HTTP Email API key detected — skipping SMTP verify (not needed)');
+    console.log(`✅ Using ${getTransportMethod()} — SMTP verify skipped`);
     return true;
   }
 
   const t = getTransporter();
-  if (!t) throw new Error('Transporter not configured or credentials missing');
+  if (!t) throw new Error('SMTP transporter not available — EMAIL_USER/EMAIL_PASS missing');
   await t.verify();
   return true;
 };
 
 export const sendTestEmail = async (toEmail) => {
+  const method = getTransportMethod();
   const mailOptions = {
-    from: `"Qubic Diagnostics" <${process.env.EMAIL_USER}>`,
+    from: `"Qubic Diagnostics" <${process.env.EMAIL_USER || 'noreply@qubic.app'}>`,
     to: toEmail,
     subject: '🧪 Qubic Live Email Test',
     html: `
@@ -355,13 +335,15 @@ export const sendTestEmail = async (toEmail) => {
         <h2 style="color: #22d3ee;">🧪 Live Email Test Succeeded!</h2>
         <p>If you are reading this email, your Qubic production email settings are working perfectly.</p>
         <hr style="border-color: #1e293b;" />
-        <p style="font-size: 12px; color: #64748b;">Sent at: ${new Date().toLocaleString()}</p>
-        <p style="font-size: 12px; color: #64748b;">Method: ${process.env.RESEND_API_KEY ? 'Resend HTTP API' : process.env.BREVO_API_KEY ? 'Brevo HTTP API' : 'SMTP'}</p>
+        <p style="font-size: 12px; color: #64748b;">Sent at: ${new Date().toISOString()}</p>
+        <p style="font-size: 12px; color: #64748b;">Method: ${method}</p>
       </div>
     `
   };
 
-  // Use sendWithRetry which automatically routes via HTTP API when available
   await sendWithRetry(mailOptions);
   return true;
 };
+
+// Re-export for diagnostics
+export { getTransportMethod };

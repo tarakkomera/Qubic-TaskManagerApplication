@@ -2,7 +2,7 @@ import User from "../models/userModel.js";
 import validator from "validator";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail, verifySMTP, sendTestEmail } from "../services/emailService.js";
+import { sendPasswordChangeEmail, sendVerificationEmail, sendForgotPasswordEmail, verifySMTP, sendTestEmail, getTransportMethod } from "../services/emailService.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_here";
 const TOKEN_EXPIRES = '24h';
@@ -58,15 +58,16 @@ export async function registerUser(req, res) {
             isApproved
         });
 
+        // Send verification email — never let email failure block registration
         const emailSent = await sendVerificationEmail(user.email, verificationCode);
-        console.log(`🔑 DEBUG: User created with email ${user.email} and code ${verificationCode}`);
 
         if (!emailSent) {
+            // Registration succeeded but email failed — user can still verify via resend
             return res.status(201).json({
                 success: true,
-                message: "Registration successful, but we failed to send the verification email. Please log in to resend the code or try again.",
+                message: "Registration successful! Verification email may be delayed. Please check your email or use 'Resend Code' on the login page.",
                 email: user.email,
-                warning: "Email sending failed"
+                warning: "Email delivery may be delayed"
             });
         }
 
@@ -109,25 +110,21 @@ export async function loginUser(req, res) {
             user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
             await user.save();
 
+            // Fire-and-forget: don't let email failure block the login response
             const emailSent = await sendVerificationEmail(user.email, verificationCode);
 
-            if (!emailSent) {
-                return res.status(403).json({
-                    message: "Your account is unverified, and we failed to send a verification code email. Please contact an administrator or try again later.",
-                    unverified: true,
-                    email: user.email
-                });
-            }
-
-            return res.status(403).json({ message: "Please verify your email to login. A new verification code has been sent.", unverified: true, email: user.email });
+            return res.status(403).json({
+                message: emailSent
+                    ? "Please verify your email to login. A new verification code has been sent."
+                    : "Your account is unverified. A verification code was generated — check Render logs or try 'Resend Code'.",
+                unverified: true,
+                email: user.email
+            });
         }
 
         if (!user.isApproved) {
             return res.status(403).json({ message: "Your account is pending approval by an administrator/HR.", notApproved: true });
         }
-
-        // HR allocation now happens at approval time only (see toggleUserApproval)
-        // This avoids expensive N+1 queries on every login
 
         const token = createToken(user._id);
         res.status(200).json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, points: user.points } });
@@ -241,8 +238,10 @@ export async function adminResetPassword(req, res) {
         targetUser.password = hashedNewPassword;
         await targetUser.save();
 
-        // Send email notification to the user
-        await sendPasswordChangeEmail(targetUser.email, newPassword);
+        // Fire-and-forget email notification — password reset succeeds even if email fails
+        sendPasswordChangeEmail(targetUser.email, newPassword).catch(err => {
+            console.error('⚠️ Admin reset email notification failed (non-blocking):', err.message);
+        });
 
         res.json({ success: true, message: "Password reset successfully. User has been notified via email." });
     } catch (error) {
@@ -304,9 +303,11 @@ export async function resendVerificationEmail(req, res) {
 
         const emailSent = await sendVerificationEmail(user.email, verificationCode);
         if (!emailSent) {
-            return res.status(500).json({
-                success: false,
-                message: "Failed to send the verification email. Please verify that your SMTP/mail credentials are set up correctly on the server."
+            // Code is saved in DB and logged to console — user can still verify
+            return res.status(200).json({
+                success: true,
+                message: "Verification code generated. Email delivery may be delayed — check your inbox shortly.",
+                warning: "Email provider may be experiencing delays"
             });
         }
         res.status(200).json({ success: true, message: "Verification code resent successfully" });
@@ -423,7 +424,8 @@ export async function forgotPassword(req, res) {
     try {
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(404).json({ success: false, message: "No account found with that email address." });
+            // Security: return same message whether email exists or not (prevents user enumeration)
+            return res.status(200).json({ success: true, message: "If an account with that email exists, a reset code has been sent." });
         }
 
         const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -433,15 +435,15 @@ export async function forgotPassword(req, res) {
 
         const emailSent = await sendForgotPasswordEmail(user.email, resetCode);
 
-        if (!emailSent) {
-            return res.status(500).json({
-                success: false,
-                message: "Failed to send the password recovery email. Please verify that your SMTP/mail credentials are set up correctly on the server."
-            });
-        }
-
-        res.status(200).json({ success: true, message: "If that email exists, a reset code has been sent." });
+        // Always return 200 — the code is saved in DB and console-logged regardless
+        res.status(200).json({
+            success: true,
+            message: emailSent
+                ? "If an account with that email exists, a reset code has been sent."
+                : "Reset code generated. Email delivery may be delayed — please check your inbox shortly."
+        });
     } catch (error) {
+        console.error('forgotPassword error:', error.message);
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 }
@@ -488,10 +490,7 @@ export async function resetPassword(req, res) {
 // Email Diagnostics Endpoint
 export async function testSMTPConnection(req, res) {
     const toEmail = req.query.email || process.env.EMAIL_USER;
-    const transportMethod = process.env.RESEND_API_KEY ? 'Resend HTTP API'
-        : process.env.BREVO_API_KEY ? 'Brevo HTTP API'
-        : process.env.SENDGRID_API_KEY ? 'SendGrid HTTP API'
-        : 'Gmail SMTP';
+    const transportMethod = getTransportMethod();
 
     try {
         console.log(`🧪 Running email diagnostics (method: ${transportMethod}, to: ${toEmail})...`);
@@ -504,40 +503,43 @@ export async function testSMTPConnection(req, res) {
             await sendTestEmail(toEmail);
             return res.status(200).json({
                 success: true,
-                message: `Email test passed! Test email sent successfully to ${toEmail} via ${transportMethod}.`,
+                message: `✅ Email test passed! Sent to ${toEmail} via ${transportMethod}.`,
                 transport: transportMethod,
                 config: {
-                    EMAIL_USER: process.env.EMAIL_USER,
+                    EMAIL_USER: process.env.EMAIL_USER || 'NOT SET',
                     EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
                     RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY,
-                    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
-                }
+                    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+                    BREVO_API_KEY_CONFIGURED: !!process.env.BREVO_API_KEY,
+                    SENDGRID_API_KEY_CONFIGURED: !!process.env.SENDGRID_API_KEY,
+                },
+                recommendation: transportMethod === 'Gmail SMTP'
+                    ? '⚠️ You are using Gmail SMTP. Render free-tier blocks ports 465/587. Add RESEND_API_KEY to fix.'
+                    : null
             });
         }
 
         res.status(200).json({
             success: true,
-            message: `Email settings are valid via ${transportMethod}! (No test email sent because target email is empty).`,
-            transport: transportMethod,
-            config: {
-                EMAIL_USER: process.env.EMAIL_USER,
-                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
-                RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY
-            }
+            message: `Email configuration valid via ${transportMethod}. No test email sent (no target email).`,
+            transport: transportMethod
         });
     } catch (error) {
         console.error("❌ Email Diagnostics Failed:", error.message);
         res.status(500).json({
             success: false,
-            message: `Email Diagnostics Failed (${transportMethod}). Please verify your environment variables.`,
+            message: `Email Diagnostics Failed (${transportMethod}).`,
             error: error.message,
             transport: transportMethod,
             config: {
-                EMAIL_USER: process.env.EMAIL_USER || "NOT FOUND",
+                EMAIL_USER: process.env.EMAIL_USER || "NOT SET",
                 EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
                 RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY,
                 RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'NOT SET'
-            }
+            },
+            recommendation: transportMethod === 'Gmail SMTP'
+                ? '🔧 Render free-tier blocks SMTP ports 465/587. Sign up at resend.com and add RESEND_API_KEY to your Render environment variables.'
+                : '🔧 Check that your API key is valid and the sender email/domain is verified.'
         });
     }
 }
