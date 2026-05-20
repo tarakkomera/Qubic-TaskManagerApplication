@@ -331,7 +331,7 @@ const Home = () => {
             </div>
           ) : (
             <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <ComposedChart data={teamPerformanceData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
                   <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
@@ -375,7 +375,7 @@ const Home = () => {
             </div>
           </div>
           <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <AreaChart data={taskTrendsData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="gCreated" x1="0" y1="0" x2="0" y2="1">
@@ -488,7 +488,7 @@ const Home = () => {
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-blue-400">14-Day Task Activity</span>
                 </h4>
                 <div className="h-[220px]">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <AreaChart data={taskHistoryData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="mCreated" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} /><stop offset="95%" stopColor="#818cf8" stopOpacity={0} /></linearGradient>
@@ -514,7 +514,7 @@ const Home = () => {
                   </h4>
                   {priorityData.length > 0 ? (
                     <div className="h-[180px]">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <PieChart>
                           <Pie data={priorityData} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={4} animationDuration={1200}>
                             {priorityData.map((e, i) => <Cell key={i} fill={e.fill} />)}
@@ -533,7 +533,7 @@ const Home = () => {
                   </h4>
                   {statusData.length > 0 ? (
                     <div className="h-[180px]">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <PieChart>
                           <Pie data={statusData} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={4} animationDuration={1200}>
                             {statusData.map((e, i) => <Cell key={i} fill={e.fill} />)}
