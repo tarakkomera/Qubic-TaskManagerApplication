@@ -485,14 +485,18 @@ export async function resetPassword(req, res) {
     }
 }
 
-// SMTP Diagnostics Endpoint
+// Email Diagnostics Endpoint
 export async function testSMTPConnection(req, res) {
     const toEmail = req.query.email || process.env.EMAIL_USER;
+    const transportMethod = process.env.RESEND_API_KEY ? 'Resend HTTP API'
+        : process.env.BREVO_API_KEY ? 'Brevo HTTP API'
+        : process.env.SENDGRID_API_KEY ? 'SendGrid HTTP API'
+        : 'Gmail SMTP';
 
     try {
-        console.log(`🧪 Running live SMTP test to: ${toEmail}...`);
+        console.log(`🧪 Running email diagnostics (method: ${transportMethod}, to: ${toEmail})...`);
 
-        // 1. Verify SMTP connection settings
+        // 1. Verify email transport configuration
         await verifySMTP();
 
         // 2. Try sending test email
@@ -500,31 +504,39 @@ export async function testSMTPConnection(req, res) {
             await sendTestEmail(toEmail);
             return res.status(200).json({
                 success: true,
-                message: `SMTP test passed! Test email sent successfully to ${toEmail}.`,
+                message: `Email test passed! Test email sent successfully to ${toEmail} via ${transportMethod}.`,
+                transport: transportMethod,
                 config: {
                     EMAIL_USER: process.env.EMAIL_USER,
-                    EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS
+                    EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
+                    RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY,
+                    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
                 }
             });
         }
 
         res.status(200).json({
             success: true,
-            message: "SMTP settings are valid! (No test email sent because target email is empty).",
+            message: `Email settings are valid via ${transportMethod}! (No test email sent because target email is empty).`,
+            transport: transportMethod,
             config: {
                 EMAIL_USER: process.env.EMAIL_USER,
-                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS
+                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
+                RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY
             }
         });
     } catch (error) {
-        console.error("❌ SMTP Diagnostics Failed:", error.message);
+        console.error("❌ Email Diagnostics Failed:", error.message);
         res.status(500).json({
             success: false,
-            message: "SMTP Diagnostics Failed. Please verify your environment variables.",
+            message: `Email Diagnostics Failed (${transportMethod}). Please verify your environment variables.`,
             error: error.message,
+            transport: transportMethod,
             config: {
                 EMAIL_USER: process.env.EMAIL_USER || "NOT FOUND",
-                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS
+                EMAIL_PASS_CONFIGURED: !!process.env.EMAIL_PASS,
+                RESEND_API_KEY_CONFIGURED: !!process.env.RESEND_API_KEY,
+                RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'NOT SET'
             }
         });
     }

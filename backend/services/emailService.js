@@ -62,8 +62,8 @@ const getTransporter = () => {
 const sendViaHTTPAPI = async (mailOptions) => {
   // 1. Resend API
   if (process.env.RESEND_API_KEY) {
-    console.log('📬 Sending email via Resend HTTP API...');
     const fromAddress = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    console.log(`📬 Sending email via Resend HTTP API... (from: ${fromAddress}, to: ${mailOptions.to}, key prefix: ${process.env.RESEND_API_KEY.substring(0, 8)}...)`);
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -332,6 +332,13 @@ export const sendForgotPasswordEmail = async (userEmail, code) => {
 
 // ─── SMTP Diagnostics for Production ─────────────────────────────────────────
 export const verifySMTP = async () => {
+  // If an HTTP email API is configured, SMTP verification is unnecessary
+  // (Render free-tier blocks SMTP ports 465/587, so verify() would always fail)
+  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY) {
+    console.log('✅ HTTP Email API key detected — skipping SMTP verify (not needed)');
+    return true;
+  }
+
   const t = getTransporter();
   if (!t) throw new Error('Transporter not configured or credentials missing');
   await t.verify();
@@ -339,23 +346,22 @@ export const verifySMTP = async () => {
 };
 
 export const sendTestEmail = async (toEmail) => {
-  const t = getTransporter();
-  if (!t) throw new Error('Transporter not configured or credentials missing');
-
   const mailOptions = {
     from: `"Qubic Diagnostics" <${process.env.EMAIL_USER}>`,
     to: toEmail,
-    subject: '🧪 Qubic Live SMTP Test Email',
+    subject: '🧪 Qubic Live Email Test',
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; background: #0f172a; color: #f1f5f9; border-radius: 8px;">
-        <h2 style="color: #22d3ee;">🧪 Live SMTP Test Succeeded!</h2>
-        <p>If you are reading this email, your Qubic production SMTP settings are working perfectly in real-time.</p>
+        <h2 style="color: #22d3ee;">🧪 Live Email Test Succeeded!</h2>
+        <p>If you are reading this email, your Qubic production email settings are working perfectly.</p>
         <hr style="border-color: #1e293b;" />
         <p style="font-size: 12px; color: #64748b;">Sent at: ${new Date().toLocaleString()}</p>
+        <p style="font-size: 12px; color: #64748b;">Method: ${process.env.RESEND_API_KEY ? 'Resend HTTP API' : process.env.BREVO_API_KEY ? 'Brevo HTTP API' : 'SMTP'}</p>
       </div>
     `
   };
 
-  await t.sendMail(mailOptions);
+  // Use sendWithRetry which automatically routes via HTTP API when available
+  await sendWithRetry(mailOptions);
   return true;
 };
