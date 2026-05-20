@@ -12,8 +12,13 @@ Date: ${new Date().toLocaleString()}
 Content: ${content}
 ==============================================
 `;
-  fs.appendFileSync(LOG_FILE, entry);
-  console.log(`\n📬 [LOCAL LOG] ${type} for ${recipient} has been recorded in emails.log`);
+  try {
+    fs.appendFileSync(LOG_FILE, entry);
+    console.log(`\n📬 [LOCAL LOG] ${type} for ${recipient} has been recorded in emails.log`);
+  } catch (err) {
+    console.warn(`⚠️ [LOCAL LOG WARNING] Failed to write email to emails.log (normal in serverless/read-only environments like Vercel):`, err.message);
+    console.log(`📬 [LOGGED EMAIL DETAILS] ${type} for ${recipient}: ${content}`);
+  }
 };
 
 // ─── Single shared transporter with connection pooling ───────────────────────
@@ -24,15 +29,19 @@ const getTransporter = () => {
   if (transporter) return transporter;
 
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('⚠️ WARNING: EMAIL_USER or EMAIL_PASS is not defined in .env file');
+    console.warn('⚠️ WARNING: EMAIL_USER or EMAIL_PASS is not defined in environment variables');
   }
+
+  // Connection pooling is excellent for long-running servers (e.g. Render/AWS EC2)
+  // but causes dead/orphaned sockets in serverless functions (e.g. Vercel/AWS Lambda)
+  const isServerless = !!process.env.VERCEL;
 
   transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
     secure: true,
-    pool: true,              // Enable connection pooling — keeps SMTP connection alive
-    maxConnections: 3,       // Max simultaneous connections
+    pool: !isServerless,      // Disable connection pooling in serverless environments
+    maxConnections: 3,       // Max simultaneous connections (only active if pooling)
     maxMessages: 50,         // Max messages per connection before reconnecting
     rateDelta: 1000,         // Rate limit: 1 second window
     rateLimit: 5,            // Max 5 messages per second
@@ -45,17 +54,6 @@ const getTransporter = () => {
     greetingTimeout: 10000,    // 10s for SMTP greeting
     socketTimeout: 15000,      // 15s for socket inactivity
   });
-
-  // Non-blocking verification (don't hold up server startup)
-  transporter.verify()
-    .then(() => console.log('✅ SMTP Server is ready to send emails'))
-    .catch((err) => {
-      console.error('❌ SMTP Connection Error:', err.message);
-      console.log('📧 Current EMAIL_USER:', process.env.EMAIL_USER);
-      console.log('💡 Make sure you use a 16-digit Gmail App Password (no spaces).');
-      // Reset transporter so next call retries
-      transporter = null;
-    });
 
   return transporter;
 };

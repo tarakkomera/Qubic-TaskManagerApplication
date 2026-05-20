@@ -58,8 +58,17 @@ export async function registerUser(req, res) {
             isApproved
         });
 
-        await sendVerificationEmail(user.email, verificationCode);
+        const emailSent = await sendVerificationEmail(user.email, verificationCode);
         console.log(`🔑 DEBUG: User created with email ${user.email} and code ${verificationCode}`);
+
+        if (!emailSent) {
+            return res.status(201).json({ 
+                success: true, 
+                message: "Registration successful, but we failed to send the verification email. Please log in to resend the code or try again.", 
+                email: user.email,
+                warning: "Email sending failed" 
+            });
+        }
 
         res.status(201).json({ success: true, message: "Registration successful. Please verify your email.", email: user.email });
 
@@ -100,7 +109,15 @@ export async function loginUser(req, res) {
             user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
             await user.save();
 
-            await sendVerificationEmail(user.email, verificationCode);
+            const emailSent = await sendVerificationEmail(user.email, verificationCode);
+            
+            if (!emailSent) {
+                return res.status(403).json({ 
+                    message: "Your account is unverified, and we failed to send a verification code email. Please contact an administrator or try again later.", 
+                    unverified: true, 
+                    email: user.email 
+                });
+            }
             
             return res.status(403).json({ message: "Please verify your email to login. A new verification code has been sent.", unverified: true, email: user.email });
         }
@@ -285,7 +302,13 @@ export async function resendVerificationEmail(req, res) {
         user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // Reset expiry to 10 mins
         await user.save();
 
-        await sendVerificationEmail(user.email, verificationCode);
+        const emailSent = await sendVerificationEmail(user.email, verificationCode);
+        if (!emailSent) {
+            return res.status(500).json({ 
+                success: false, 
+                message: "Failed to send the verification email. Please verify that your SMTP/mail credentials are set up correctly on the server." 
+            });
+        }
         res.status(200).json({ success: true, message: "Verification code resent successfully" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
@@ -408,7 +431,14 @@ export async function forgotPassword(req, res) {
         user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         await user.save();
 
-        await sendForgotPasswordEmail(user.email, resetCode);
+        const emailSent = await sendForgotPasswordEmail(user.email, resetCode);
+
+        if (!emailSent) {
+            return res.status(500).json({ 
+                success: false, 
+                message: "Failed to send the password recovery email. Please verify that your SMTP/mail credentials are set up correctly on the server." 
+            });
+        }
 
         res.status(200).json({ success: true, message: "If that email exists, a reset code has been sent." });
     } catch (error) {
