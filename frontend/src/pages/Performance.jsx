@@ -203,7 +203,7 @@ const Performance = () => {
             Completion Progression (Last 7 Days)
           </h3>
           <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height={300} debounce={50} minWidth={0} minHeight={0}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
@@ -233,7 +233,7 @@ const Performance = () => {
             Task Focus
           </h3>
           <div className="h-[200px] w-full relative">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height={200} debounce={50} minWidth={0} minHeight={0}>
               <PieChart>
                 <Pie
                   data={priorityData}
@@ -284,7 +284,7 @@ const Performance = () => {
           )}
         </h3>
         <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          <ResponsiveContainer width="100%" height={300} debounce={50} minWidth={0} minHeight={0}>
             {selectedUserId === 'all' ? (
               <BarChart data={allUsers
                 .map(u => ({
